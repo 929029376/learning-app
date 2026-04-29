@@ -146,16 +146,6 @@ async function discoverStages(studyRoot: string): Promise<LearningStage[]> {
   }
 
   stages.sort((a, b) => compareStageIds(a.id, b.id));
-  if (stages.length === 0) {
-    stages.push({
-      id: DEFAULT_CURRENT_STAGE_ID,
-      title: "2.11 struct basics",
-      phase: DEFAULT_PHASE,
-      status: "learning",
-      notePath: await findNotePath(noteRoot, 2),
-      practicePath: path.join(practiceRoot, "phase2", DEFAULT_CURRENT_STAGE_ID)
-    });
-  }
   return stages;
 }
 

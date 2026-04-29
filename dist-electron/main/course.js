@@ -122,16 +122,6 @@ async function discoverStages(studyRoot) {
         });
     }
     stages.sort((a, b) => compareStageIds(a.id, b.id));
-    if (stages.length === 0) {
-        stages.push({
-            id: DEFAULT_CURRENT_STAGE_ID,
-            title: "2.11 struct basics",
-            phase: DEFAULT_PHASE,
-            status: "learning",
-            notePath: await findNotePath(noteRoot, 2),
-            practicePath: node_path_1.default.join(practiceRoot, "phase2", DEFAULT_CURRENT_STAGE_ID)
-        });
-    }
     return stages;
 }
 async function walkPracticeDirs(root, onDir) {
