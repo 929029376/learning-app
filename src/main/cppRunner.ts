@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import type {
@@ -35,6 +36,7 @@ interface RunnerCommand {
 }
 
 const ignoredProjectDirs = new Set([".git", ".learning-data", "build", "dist", "node_modules"]);
+const liveDiagnosticsTempRoot = path.join(os.tmpdir(), "learning-app-live-diagnostics");
 
 export async function validateCppContent(request: ValidateCppContentRequest): Promise<ValidateCppContentResult> {
   const sourcePath = path.resolve(request.filePath);
@@ -57,7 +59,7 @@ export async function validateCppContent(request: ValidateCppContentRequest): Pr
   }
 
   const runnerMode = getRunnerMode();
-  const checkDir = path.join(getRunsPath(studyRoot), "live-diagnostics", cryptoRandomId());
+  const checkDir = path.join(liveDiagnosticsTempRoot, cryptoRandomId());
   await ensureDir(checkDir);
 
   const temporarySourcePath = path.join(checkDir, path.basename(sourcePath));
@@ -105,8 +107,22 @@ export async function validateCppContent(request: ValidateCppContentRequest): Pr
       checkedAt: new Date().toISOString()
     };
   } finally {
-    await fs.rm(checkDir, { recursive: true, force: true });
+    await removeLiveDiagnosticDir(checkDir);
   }
+}
+
+async function removeLiveDiagnosticDir(checkDir: string): Promise<void> {
+  try {
+    await fs.rm(checkDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } catch (error) {
+    if (isTransientFileLock(error)) return;
+    throw error;
+  }
+}
+
+function isTransientFileLock(error: unknown): boolean {
+  if (!(error instanceof Error) || !("code" in error)) return false;
+  return ["EBUSY", "EPERM", "ENOTEMPTY"].includes(String((error as NodeJS.ErrnoException).code));
 }
 
 export async function runCppExercise(request: RunCppExerciseRequest): Promise<ExerciseResult> {

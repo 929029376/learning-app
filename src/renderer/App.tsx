@@ -566,7 +566,7 @@ export function App() {
   async function loadStage(root: string, stageId: string) {
     setStatus("正在打开当前小节...");
     try {
-      const nextOverview = await window.learningApi.setCurrentStage({ studyRoot: root, stageId });
+      const nextOverview = await window.learningApi.getCourseOverview(root);
       setOverview(nextOverview);
       const content = await window.learningApi.getStageContent(root, stageId);
       const nextExercisePath = content.defaultExercisePath ?? "";
@@ -867,18 +867,25 @@ export function App() {
       stageId: stageContent.stage.id
     });
     setOverview(nextOverview);
-    setStatus(`已标记完成：${stageContent.stage.title}。如果代码还没让我检查，记得回到对话里告诉我。`);
+    const nextStageId = nextOverview.progress.currentStageId ?? getNextStageId(nextOverview, stageContent.stage.id);
+    setStatus(`已标记完成：${stageContent.stage.title}。正在进入下一节...`);
+    if (nextStageId) {
+      await loadStage(studyRoot, nextStageId);
+    }
   }
 
   async function openNextStage() {
-    if (!studyRoot) return;
+    if (!studyRoot || !stageContent) return;
 
-    setStatus("正在重新扫描学习目录，并准备进入下一节...");
-    const result = await window.learningApi.scanStudyRoot(studyRoot);
-    setOverview(result.overview);
-    const nextStageId = getNextStageId(result.overview, stageContent?.stage.id);
+    setStatus("正在标记当前小节完成，并准备进入下一节...");
+    const nextOverview = await window.learningApi.completeStage({
+      studyRoot,
+      stageId: stageContent.stage.id
+    });
+    setOverview(nextOverview);
+    const nextStageId = nextOverview.progress.currentStageId ?? getNextStageId(nextOverview, stageContent.stage.id);
     if (!nextStageId) {
-      setStatus("重新扫描完成，但当前已经是已识别阶段列表中的最后一节。");
+      setStatus("当前已经是已识别阶段列表中的最后一节。");
       return;
     }
 

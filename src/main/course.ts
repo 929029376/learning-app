@@ -2,12 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { CourseOverview, LearningSource, LearningStage, ProgressSnapshot, StageStatus } from "../shared/types.js";
-import { getLearningDataPath, pathExists, toRelativePath } from "./fileUtils.js";
+import { ensureDir, getLearningDataPath, pathExists, toRelativePath } from "./fileUtils.js";
 
 const DEFAULT_CURRENT_STAGE_ID = "stage-2-11-struct-basics";
 const DEFAULT_TOTAL_PERCENT = 21;
 const DEFAULT_PHASE_PERCENT = 70;
 const DEFAULT_PHASE = "Phase 2";
+const COMPLETED_STAGE_MARKERS_DIR = "completed-stages";
 
 const KNOWN_GRADES = new Map<string, string>([
   ["stage-2-1", "A-"],
@@ -100,6 +101,7 @@ export async function completeStage(studyRoot: string, stageId: string, sources:
   const state = await readCourseState(studyRoot);
   const completedStageIds = getCompletedStageIds(stages, state);
   completedStageIds.add(stageId);
+  await writeStageCompletionMarker(studyRoot, stageId);
   await writeCourseState(studyRoot, {
     currentStageId: getNextIncompleteStageId(stages, stageId, completedStageIds) ?? normalizeCurrentStageId(stages, stageId),
     completedStageIds: [...completedStageIds]
@@ -311,13 +313,13 @@ function extractStageExcerpt(markdown: string, stage: LearningStage): string {
 
 async function readCourseState(studyRoot: string): Promise<CourseState> {
   const coursePath = getCourseJsonPath(studyRoot);
+  const completedStageIds = new Set(await readStageCompletionMarkers(studyRoot));
   if (!(await pathExists(coursePath))) {
-    return { currentStageId: DEFAULT_CURRENT_STAGE_ID, completedStageIds: [] };
+    return { currentStageId: DEFAULT_CURRENT_STAGE_ID, completedStageIds: [...completedStageIds] };
   }
 
   try {
     const parsed = JSON.parse(await fs.readFile(coursePath, "utf8")) as CourseJson;
-    const completedStageIds = new Set<string>();
     if (Array.isArray(parsed.completedStageIds)) {
       for (const stageId of parsed.completedStageIds) completedStageIds.add(stageId);
     }
@@ -331,8 +333,31 @@ async function readCourseState(studyRoot: string): Promise<CourseState> {
       completedStageIds: [...completedStageIds]
     };
   } catch {
-    return { currentStageId: DEFAULT_CURRENT_STAGE_ID, completedStageIds: [] };
+    return { currentStageId: DEFAULT_CURRENT_STAGE_ID, completedStageIds: [...completedStageIds] };
   }
+}
+
+async function readStageCompletionMarkers(studyRoot: string): Promise<string[]> {
+  const markersPath = getCompletedStageMarkersPath(studyRoot);
+  try {
+    const entries = await fs.readdir(markersPath, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .map((entry) => entry.name.slice(0, -".json".length))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function writeStageCompletionMarker(studyRoot: string, stageId: string): Promise<void> {
+  const markersPath = getCompletedStageMarkersPath(studyRoot);
+  await ensureDir(markersPath);
+  await fs.writeFile(
+    path.join(markersPath, `${stageId}.json`),
+    `${JSON.stringify({ stageId, completedAt: new Date().toISOString() }, null, 2)}\n`,
+    "utf8"
+  );
 }
 
 async function writeCourseState(studyRoot: string, state: CourseState): Promise<void> {
@@ -377,4 +402,8 @@ async function writeCourseJson(studyRoot: string, overview: CourseOverview, comp
 
 function getCourseJsonPath(studyRoot: string): string {
   return path.join(getLearningDataPath(studyRoot), "course.json");
+}
+
+function getCompletedStageMarkersPath(studyRoot: string): string {
+  return path.join(getLearningDataPath(studyRoot), COMPLETED_STAGE_MARKERS_DIR);
 }

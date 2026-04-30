@@ -8,10 +8,12 @@ exports.runCppExercise = runCppExercise;
 exports.runExerciseProject = runExerciseProject;
 const node_child_process_1 = require("node:child_process");
 const promises_1 = __importDefault(require("node:fs/promises"));
+const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
 const fileUtils_js_1 = require("./fileUtils.js");
 const database_js_1 = require("./database.js");
 const ignoredProjectDirs = new Set([".git", ".learning-data", "build", "dist", "node_modules"]);
+const liveDiagnosticsTempRoot = node_path_1.default.join(node_os_1.default.tmpdir(), "learning-app-live-diagnostics");
 async function validateCppContent(request) {
     const sourcePath = node_path_1.default.resolve(request.filePath);
     const studyRoot = node_path_1.default.resolve(request.studyRoot);
@@ -30,7 +32,7 @@ async function validateCppContent(request) {
         };
     }
     const runnerMode = getRunnerMode();
-    const checkDir = node_path_1.default.join((0, fileUtils_js_1.getRunsPath)(studyRoot), "live-diagnostics", (0, database_js_1.cryptoRandomId)());
+    const checkDir = node_path_1.default.join(liveDiagnosticsTempRoot, (0, database_js_1.cryptoRandomId)());
     await (0, fileUtils_js_1.ensureDir)(checkDir);
     const temporarySourcePath = node_path_1.default.join(checkDir, node_path_1.default.basename(sourcePath));
     await promises_1.default.writeFile(temporarySourcePath, request.content, "utf8");
@@ -71,8 +73,23 @@ async function validateCppContent(request) {
         };
     }
     finally {
-        await promises_1.default.rm(checkDir, { recursive: true, force: true });
+        await removeLiveDiagnosticDir(checkDir);
     }
+}
+async function removeLiveDiagnosticDir(checkDir) {
+    try {
+        await promises_1.default.rm(checkDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
+    catch (error) {
+        if (isTransientFileLock(error))
+            return;
+        throw error;
+    }
+}
+function isTransientFileLock(error) {
+    if (!(error instanceof Error) || !("code" in error))
+        return false;
+    return ["EBUSY", "EPERM", "ENOTEMPTY"].includes(String(error.code));
 }
 async function runCppExercise(request) {
     const sourcePath = node_path_1.default.resolve(request.sourcePath);

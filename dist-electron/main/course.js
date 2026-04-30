@@ -14,6 +14,7 @@ const DEFAULT_CURRENT_STAGE_ID = "stage-2-11-struct-basics";
 const DEFAULT_TOTAL_PERCENT = 21;
 const DEFAULT_PHASE_PERCENT = 70;
 const DEFAULT_PHASE = "Phase 2";
+const COMPLETED_STAGE_MARKERS_DIR = "completed-stages";
 const KNOWN_GRADES = new Map([
     ["stage-2-1", "A-"],
     ["stage-2-2", "A-"],
@@ -80,6 +81,7 @@ async function completeStage(studyRoot, stageId, sources) {
     const state = await readCourseState(studyRoot);
     const completedStageIds = getCompletedStageIds(stages, state);
     completedStageIds.add(stageId);
+    await writeStageCompletionMarker(studyRoot, stageId);
     await writeCourseState(studyRoot, {
         currentStageId: getNextIncompleteStageId(stages, stageId, completedStageIds) ?? normalizeCurrentStageId(stages, stageId),
         completedStageIds: [...completedStageIds]
@@ -277,12 +279,12 @@ function extractStageExcerpt(markdown, stage) {
 }
 async function readCourseState(studyRoot) {
     const coursePath = getCourseJsonPath(studyRoot);
+    const completedStageIds = new Set(await readStageCompletionMarkers(studyRoot));
     if (!(await (0, fileUtils_js_1.pathExists)(coursePath))) {
-        return { currentStageId: DEFAULT_CURRENT_STAGE_ID, completedStageIds: [] };
+        return { currentStageId: DEFAULT_CURRENT_STAGE_ID, completedStageIds: [...completedStageIds] };
     }
     try {
         const parsed = JSON.parse(await promises_1.default.readFile(coursePath, "utf8"));
-        const completedStageIds = new Set();
         if (Array.isArray(parsed.completedStageIds)) {
             for (const stageId of parsed.completedStageIds)
                 completedStageIds.add(stageId);
@@ -299,8 +301,26 @@ async function readCourseState(studyRoot) {
         };
     }
     catch {
-        return { currentStageId: DEFAULT_CURRENT_STAGE_ID, completedStageIds: [] };
+        return { currentStageId: DEFAULT_CURRENT_STAGE_ID, completedStageIds: [...completedStageIds] };
     }
+}
+async function readStageCompletionMarkers(studyRoot) {
+    const markersPath = getCompletedStageMarkersPath(studyRoot);
+    try {
+        const entries = await promises_1.default.readdir(markersPath, { withFileTypes: true });
+        return entries
+            .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+            .map((entry) => entry.name.slice(0, -".json".length))
+            .filter(Boolean);
+    }
+    catch {
+        return [];
+    }
+}
+async function writeStageCompletionMarker(studyRoot, stageId) {
+    const markersPath = getCompletedStageMarkersPath(studyRoot);
+    await (0, fileUtils_js_1.ensureDir)(markersPath);
+    await promises_1.default.writeFile(node_path_1.default.join(markersPath, `${stageId}.json`), `${JSON.stringify({ stageId, completedAt: new Date().toISOString() }, null, 2)}\n`, "utf8");
 }
 async function writeCourseState(studyRoot, state) {
     const sources = [];
@@ -338,4 +358,7 @@ async function writeCourseJson(studyRoot, overview, completedStageIds) {
 }
 function getCourseJsonPath(studyRoot) {
     return node_path_1.default.join((0, fileUtils_js_1.getLearningDataPath)(studyRoot), "course.json");
+}
+function getCompletedStageMarkersPath(studyRoot) {
+    return node_path_1.default.join((0, fileUtils_js_1.getLearningDataPath)(studyRoot), COMPLETED_STAGE_MARKERS_DIR);
 }
