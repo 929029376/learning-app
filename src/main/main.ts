@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import type { BrowserWindow as BrowserWindowInstance } from "electron";
+import fs from "node:fs";
 import path from "node:path";
 
 import type { PanelWindowRequest, WorkspacePanel } from "../shared/types.js";
@@ -39,6 +40,7 @@ function createWindow(options: CreateWindowOptions = {}): BrowserWindowInstance 
     }
   });
 
+  attachWindowDiagnostics(window, options.panel);
   void loadApp(window, options);
 
   if (!options.panel) {
@@ -49,6 +51,32 @@ function createWindow(options: CreateWindowOptions = {}): BrowserWindowInstance 
   }
 
   return window;
+}
+
+function attachWindowDiagnostics(window: BrowserWindowInstance, panel?: WorkspacePanel): void {
+  const label = panel ?? "main";
+  window.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    appendRuntimeLog(`[renderer:${label}] level=${level} ${sourceId}:${line} ${message}`);
+  });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    appendRuntimeLog(`[renderer:${label}] render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
+  });
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    appendRuntimeLog(`[renderer:${label}] did-fail-load ${errorCode} ${errorDescription} ${validatedURL}`);
+  });
+  window.on("unresponsive", () => {
+    appendRuntimeLog(`[window:${label}] unresponsive`);
+  });
+}
+
+function appendRuntimeLog(message: string): void {
+  const line = `${new Date().toISOString()} ${message}\n`;
+  console.log(line.trimEnd());
+  try {
+    fs.appendFileSync(path.join(app.getPath("userData"), "runtime.log"), line, "utf8");
+  } catch {
+    // Logging should never affect the learning app itself.
+  }
 }
 
 function getPanelWindowSize(panel?: WorkspacePanel): { width: number; height: number; minWidth: number; minHeight: number } {

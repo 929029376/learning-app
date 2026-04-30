@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
+const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const ipc_js_1 = require("./ipc.js");
 let mainWindow = null;
@@ -30,6 +31,7 @@ function createWindow(options = {}) {
             sandbox: false
         }
     });
+    attachWindowDiagnostics(window, options.panel);
     void loadApp(window, options);
     if (!options.panel) {
         mainWindow = window;
@@ -38,6 +40,31 @@ function createWindow(options = {}) {
         });
     }
     return window;
+}
+function attachWindowDiagnostics(window, panel) {
+    const label = panel ?? "main";
+    window.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+        appendRuntimeLog(`[renderer:${label}] level=${level} ${sourceId}:${line} ${message}`);
+    });
+    window.webContents.on("render-process-gone", (_event, details) => {
+        appendRuntimeLog(`[renderer:${label}] render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
+    });
+    window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+        appendRuntimeLog(`[renderer:${label}] did-fail-load ${errorCode} ${errorDescription} ${validatedURL}`);
+    });
+    window.on("unresponsive", () => {
+        appendRuntimeLog(`[window:${label}] unresponsive`);
+    });
+}
+function appendRuntimeLog(message) {
+    const line = `${new Date().toISOString()} ${message}\n`;
+    console.log(line.trimEnd());
+    try {
+        node_fs_1.default.appendFileSync(node_path_1.default.join(electron_1.app.getPath("userData"), "runtime.log"), line, "utf8");
+    }
+    catch {
+        // Logging should never affect the learning app itself.
+    }
 }
 function getPanelWindowSize(panel) {
     if (panel === "progress")

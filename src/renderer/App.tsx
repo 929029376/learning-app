@@ -1,5 +1,11 @@
-import { Children, isValidElement, useEffect, useRef, useState, useTransition } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { Children, isValidElement, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type {
+  CSSProperties,
+  ChangeEvent as ReactChangeEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode
+} from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { acceptCompletion, autocompletion, snippetCompletion } from "@codemirror/autocomplete";
 import type { Completion, CompletionContext, CompletionResult, CompletionSource } from "@codemirror/autocomplete";
@@ -41,6 +47,7 @@ const maximumEditorFontSize = 22;
 const defaultFileTreeWidth = 220;
 const minimumFileTreeWidth = 120;
 const maximumFileTreeWidth = 520;
+const maximumProgramInputLength = 12000;
 const workspacePanels: WorkspacePanel[] = ["progress", "lesson", "studio"];
 
 type ResizeHandle = "left" | "right";
@@ -143,25 +150,30 @@ function createSmartCompletionSource(baseOptions: Completion[], includeDocumentS
 }
 
 function getCppMemberCompletionResult(context: CompletionContext, sourceText: string): CompletionResult | null {
-  const memberAccess =
-    context.matchBefore(/\b[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*/) ??
-    context.matchBefore(/\b[A-Za-z_][A-Za-z0-9_]*\./);
-  if (!memberAccess) return null;
+  const access = getCppMemberAccessAtCursor(context);
+  if (!access) return null;
 
-  const dotIndex = memberAccess.text.lastIndexOf(".");
-  if (dotIndex < 1) return null;
-
-  const objectName = memberAccess.text.slice(0, dotIndex);
-  const from = memberAccess.from + dotIndex + 1;
-  const options = getCppMemberCompletions(sourceText, objectName);
-  if (options.length === 0) {
-    return { from, options: [], validFor: /^[A-Za-z_][A-Za-z0-9_]*$/ };
-  }
+  const from = context.pos - access.partial.length;
+  const options = getCppMemberCompletions(sourceText, access.objectName);
+  if (options.length === 0 && !context.explicit) return null;
 
   return {
     from,
     options,
     validFor: /^[A-Za-z_][A-Za-z0-9_]*$/
+  };
+}
+
+function getCppMemberAccessAtCursor(context: CompletionContext): { objectName: string; operator: "." | "->"; partial: string } | null {
+  const line = context.state.doc.lineAt(context.pos);
+  const textBeforeCursor = context.state.sliceDoc(line.from, context.pos);
+  const match = textBeforeCursor.match(/\b([A-Za-z_][A-Za-z0-9_]*)\s*(\.|->)\s*([A-Za-z_][A-Za-z0-9_]*)?$/);
+  if (!match) return null;
+
+  return {
+    objectName: match[1],
+    operator: match[2] as "." | "->",
+    partial: match[3] ?? ""
   };
 }
 
@@ -182,18 +194,17 @@ function getCppStructMemberMap(sourceText: string): Map<string, Completion[]> {
     const structName = structMatch[1];
     const body = stripCppComments(structMatch[2]);
     const members = new Map<string, Completion>();
-    const fieldPattern =
-      /(?:^|[;\n])\s*(?:public:|private:|protected:)?\s*(?:static\s+)?(?:const\s+)?(?:std::)?[A-Za-z_][A-Za-z0-9_:<>]*\s*(?:[*&]\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*(?=[=;])/g;
 
-    for (const fieldMatch of body.matchAll(fieldPattern)) {
-      const memberName = fieldMatch[1];
-      if (!memberName || ignoredCompletionLabels.has(memberName)) continue;
-      members.set(memberName, {
-        label: memberName,
-        type: "property",
-        detail: `${structName} member`,
-        boost: 130
-      });
+    for (const statement of body.split(";")) {
+      for (const memberName of getCppFieldNames(statement)) {
+        if (!memberName || ignoredCompletionLabels.has(memberName)) continue;
+        members.set(memberName, {
+          label: memberName,
+          type: "property",
+          detail: `${structName} member`,
+          boost: 130
+        });
+      }
     }
 
     structMembers.set(structName, [...members.values()]);
@@ -202,16 +213,51 @@ function getCppStructMemberMap(sourceText: string): Map<string, Completion[]> {
   return structMembers;
 }
 
+function getCppFieldNames(statement: string): string[] {
+  const cleaned = statement
+    .replace(/\b(public|private|protected)\s*:/g, " ")
+    .replace(/\b(static|mutable|constexpr|volatile|const)\b/g, " ")
+    .trim();
+
+  if (!cleaned || cleaned.includes("(") || cleaned.includes(")") || cleaned.includes("{") || cleaned.includes("}")) {
+    return [];
+  }
+
+  const declarators = cleaned.split(",").map((part) => part.trim()).filter(Boolean);
+  return declarators
+    .map((declarator) => getCppDeclaratorName(declarator))
+    .filter((name): name is string => Boolean(name));
+}
+
+function getCppDeclaratorName(declarator: string): string | null {
+  const withoutInitializer = declarator
+    .replace(/=.*/, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .trim();
+  const match = withoutInitializer.match(/(?:^|[\s*&])([A-Za-z_][A-Za-z0-9_]*)\s*$/);
+  return match?.[1] ?? null;
+}
+
 function getCppObjectTypeMap(sourceText: string): Map<string, string> {
   const objectTypes = new Map<string, string>();
+  const structMembers = getCppStructMemberMap(sourceText);
+  const knownTypes = new Set(structMembers.keys());
   const cleanedText = stripCppComments(sourceText);
   const declarationPattern =
-    /\b(?:const\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?:[*&]\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*(?=[=;,)])/g;
+    /(?:^|[;{}\n(,])\s*(?:const\s+)?(?:struct\s+|class\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?:[*&]\s*){0,2}([A-Za-z_][A-Za-z0-9_]*)\s*(?=[=;,){}])/g;
 
   for (const declarationMatch of cleanedText.matchAll(declarationPattern)) {
     const typeName = declarationMatch[1];
     const variableName = declarationMatch[2];
-    if (!typeName || !variableName || ignoredCompletionLabels.has(typeName) || ignoredCompletionLabels.has(variableName)) continue;
+    if (
+      !typeName ||
+      !variableName ||
+      !knownTypes.has(typeName) ||
+      ignoredCompletionLabels.has(typeName) ||
+      ignoredCompletionLabels.has(variableName)
+    ) {
+      continue;
+    }
     objectTypes.set(variableName, typeName);
   }
 
@@ -302,6 +348,10 @@ interface IconButtonProps {
   disabled?: boolean;
 }
 
+interface ProgramInputBoxProps {
+  onInputChange: (value: string) => void;
+}
+
 type BuildDiagnostic = Omit<CodeDiagnostic, "severity"> & { severity: Diagnostic["severity"] };
 
 const codeEditorTheme = EditorView.theme({
@@ -351,10 +401,10 @@ export function App() {
   const editorMeasureFrameRef = useRef<number | null>(null);
   const newFileInputRef = useRef<HTMLInputElement | null>(null);
   const liveDiagnosticRequestRef = useRef(0);
+  const exerciseInputRef = useRef("");
   const [studyRoot, setStudyRoot] = useState("");
   const [overview, setOverview] = useState<CourseOverview | null>(null);
   const [stageContent, setStageContent] = useState<StageContent | null>(null);
-  const [exerciseInput, setExerciseInput] = useState("");
   const [practicePath, setPracticePath] = useState("");
   const [exerciseFiles, setExerciseFiles] = useState<ExerciseFile[]>([]);
   const [openFilePaths, setOpenFilePaths] = useState<string[]>([]);
@@ -382,16 +432,28 @@ export function App() {
   const [minimizedPanels, setMinimizedPanels] = useState<WorkspacePanel[]>(() => loadMinimizedPanels());
 
   const currentStageId = stageContent?.stage.id;
+  const handleProgramInputChange = useCallback((value: string) => {
+    exerciseInputRef.current = value;
+  }, []);
   const stagePhaseOptions = getStagePhaseOptions(overview?.stages ?? []);
   const visibleStages = (overview?.stages ?? []).filter((stage) => stagePhaseFilter === "all" || stage.phase === stagePhaseFilter);
   const stageRouteCounter = formatStageRouteCounter(visibleStages, currentStageId);
   const fileTree = buildFileTree(exerciseFiles);
   const activeCode = activeFilePath ? fileContents[activeFilePath] ?? "" : "";
-  const projectCompletionSourceText = getProjectCompletionSourceText(fileContents, activeFilePath, activeCode);
+  const projectCompletionSourceText = useMemo(
+    () => getProjectCompletionSourceText(fileContents, activeFilePath, activeCode),
+    [fileContents, activeFilePath, activeCode]
+  );
   const activeDirty = activeFilePath ? (fileContents[activeFilePath] ?? "") !== (savedFileContents[activeFilePath] ?? "") : false;
-  const buildDiagnostics = activeDirty ? [] : getEditorDiagnostics(activeFilePath, exerciseResult);
+  const buildDiagnostics = useMemo(
+    () => (activeDirty ? [] : getEditorDiagnostics(activeFilePath, exerciseResult)),
+    [activeDirty, activeFilePath, exerciseResult]
+  );
   const editorDiagnostics = liveDiagnosticStatus ? liveDiagnostics : buildDiagnostics;
-  const editorExtensions = getEditorExtensions(activeFilePath, editorDiagnostics, projectCompletionSourceText);
+  const editorExtensions = useMemo(
+    () => getEditorExtensions(activeFilePath, editorDiagnostics, projectCompletionSourceText),
+    [activeFilePath, editorDiagnostics, projectCompletionSourceText]
+  );
   const editorErrorCount = editorDiagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
   const editorWarningCount = editorDiagnostics.filter((diagnostic) => diagnostic.severity === "warning").length;
   const projectDirty = openFilePaths.some((filePath) => (fileContents[filePath] ?? "") !== (savedFileContents[filePath] ?? ""));
@@ -851,7 +913,7 @@ export function App() {
       const result = await window.learningApi.runExerciseProject({
         studyRoot,
         practicePath,
-        stdin: exerciseInput
+        stdin: toProgramStdin(exerciseInputRef.current)
       });
       setExerciseResult(result);
       setStatus(result.passed ? "编译运行成功。" : "编译或运行失败，请查看代码实验室输出。");
@@ -1259,7 +1321,7 @@ export function App() {
                   }
                 }}
               >
-                {stageContent?.content ?? "这里会显示当前阶段笔记。第一版默认打开 Phase 2.11 struct 基础。"}
+                {stageContent?.content ?? "这里会显示当前小节笔记。请选择或扫描学习目录后开始。"}
               </ReactMarkdown>
             </div>
           </article>
@@ -1412,14 +1474,14 @@ export function App() {
             <div className="ide-console">
               <div className="console-header">
                 <strong>Program Input</strong>
-                <span>stdin</span>
+                <div className="console-header-actions">
+                  <span>stdin</span>
+                  <button type="button" className="console-run-button" onClick={saveAndRunExercise} disabled={!practicePath}>
+                    运行
+                  </button>
+                </div>
               </div>
-              <textarea
-                className="stdin-box"
-                value={exerciseInput}
-                onChange={(event) => setExerciseInput(event.target.value)}
-                placeholder="程序输入，可为空。例如：keyword 回车 title 回车 content"
-              />
+              <ProgramInputBox onInputChange={handleProgramInputChange} />
             </div>
             {exerciseResult && (
               <div className={exerciseResult.passed ? "run-output pass" : "run-output fail"}>
@@ -1440,7 +1502,7 @@ export function App() {
             <ol>
               <li>先在代码实验室保存并运行。</li>
               <li>确认编译运行结果没有明显问题。</li>
-              <li>回到对话里告诉我：我完成 2.11 练习了，请检查。</li>
+              <li>回到对话里告诉我：我完成 {stageContent?.stage.title ?? "当前小节"} 练习了，请检查。</li>
               <li>我会检查代码、评分、指出问题，并安排下一小节。</li>
             </ol>
           </section>
@@ -1522,6 +1584,35 @@ function IconButton({ label, onClick, children, disabled = false }: IconButtonPr
     >
       {children}
     </button>
+  );
+}
+
+function ProgramInputBox({ onInputChange }: ProgramInputBoxProps) {
+  const [value, setValue] = useState("");
+
+  function handleChange(event: ReactChangeEvent<HTMLTextAreaElement>) {
+    const nextValue = normalizeProgramInput(event.currentTarget.value);
+    setValue(nextValue);
+    onInputChange(nextValue);
+  }
+
+  function stopKeyPropagation(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    event.stopPropagation();
+  }
+
+  return (
+    <textarea
+      className="stdin-box"
+      value={value}
+      rows={3}
+      maxLength={maximumProgramInputLength}
+      spellCheck={false}
+      wrap="soft"
+      onChange={handleChange}
+      onKeyDown={stopKeyPropagation}
+      onKeyUp={stopKeyPropagation}
+      placeholder="程序输入，可为空。例如：keyword 回车 title 回车 content"
+    />
   );
 }
 
@@ -1911,13 +2002,16 @@ function diagnosticDecorationExtension(diagnostics: BuildDiagnostic[]): Extensio
       const range = getVisibleDiagnosticRange(diagnostic, view.state.doc);
       const markClass = diagnostic.severity === "error" ? "live-diagnostic-mark-error" : "live-diagnostic-mark-warning";
       const lineClass = diagnostic.severity === "error" ? "live-diagnostic-line-error" : "live-diagnostic-line-warning";
-      return [
-        Decoration.line({ class: lineClass }).range(range.lineFrom),
-        Decoration.mark({
+      const decorations = [Decoration.line({ class: lineClass }).range(range.lineFrom)];
+
+      if (range.to > range.from) {
+        decorations.push(Decoration.mark({
           class: markClass,
           attributes: { title: diagnostic.message }
-        }).range(range.from, range.to)
-      ];
+        }).range(range.from, range.to));
+      }
+
+      return decorations;
     });
     return Decoration.set(ranges, true);
   });
@@ -2215,4 +2309,14 @@ function cleanToolOutput(text: string): string {
 function isNoisyToolOutputLine(line: string): boolean {
   const normalizedLine = line.toLowerCase();
   return normalizedLine.includes("localhost") && normalizedLine.includes("wsl") && normalizedLine.includes("nat");
+}
+
+function normalizeProgramInput(value: string): string {
+  return value.replace(/\r\n?/g, "\n").slice(0, maximumProgramInputLength);
+}
+
+function toProgramStdin(value: string): string {
+  const normalized = normalizeProgramInput(value);
+  if (!normalized) return "";
+  return normalized.endsWith("\n") ? normalized : `${normalized}\n`;
 }

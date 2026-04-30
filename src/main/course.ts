@@ -4,11 +4,20 @@ import path from "node:path";
 import type { CourseOverview, LearningSource, LearningStage, ProgressSnapshot, StageStatus } from "../shared/types.js";
 import { ensureDir, getLearningDataPath, pathExists, toRelativePath } from "./fileUtils.js";
 
-const DEFAULT_CURRENT_STAGE_ID = "stage-2-11-struct-basics";
-const DEFAULT_TOTAL_PERCENT = 21;
-const DEFAULT_PHASE_PERCENT = 70;
+const DEFAULT_CURRENT_STAGE_ID = "stage-2-13-vector-basics";
 const DEFAULT_PHASE = "Phase 2";
 const COMPLETED_STAGE_MARKERS_DIR = "completed-stages";
+const PHASE_WEIGHTS = new Map<number, number>([
+  [1, 10],
+  [2, 15],
+  [3, 10],
+  [4, 10],
+  [5, 10],
+  [6, 10],
+  [7, 10],
+  [8, 10],
+  [9, 15]
+]);
 
 const KNOWN_GRADES = new Map<string, string>([
   ["stage-2-1", "A-"],
@@ -20,7 +29,9 @@ const KNOWN_GRADES = new Map<string, string>([
   ["stage-2-7", "A"],
   ["stage-2-8", "A"],
   ["stage-2-9", "A-"],
-  ["stage-2-10", "A"]
+  ["stage-2-10", "A"],
+  ["stage-2-11", "A-"],
+  ["stage-2-12", "A-"]
 ]);
 
 interface CourseState {
@@ -197,7 +208,7 @@ function compareStageIds(left: string, right: string): number {
 
 function getKnownGrade(stageId: string): string | undefined {
   for (const [prefix, grade] of KNOWN_GRADES) {
-    if (stageId.startsWith(prefix)) return grade;
+    if (stageId === prefix || stageId.startsWith(`${prefix}-`)) return grade;
   }
   return undefined;
 }
@@ -251,13 +262,10 @@ function buildProgressSnapshot(stages: LearningStage[], currentStageId: string |
   const currentPhase = currentStage?.phase ?? DEFAULT_PHASE;
   const currentPhaseStages = stages.filter((stage) => stage.phase === currentPhase);
   const completedInPhase = currentPhaseStages.filter((stage) => completedStageIds.has(stage.id)).length;
-  const baselineCompletedInPhase = Math.min(10, currentPhaseStages.length);
-  const remainingAfterBaseline = Math.max(1, currentPhaseStages.length - baselineCompletedInPhase);
-  const extraCompleted = Math.max(0, completedInPhase - baselineCompletedInPhase);
-  const phasePercent = clampPercent(
-    Math.round(DEFAULT_PHASE_PERCENT + (extraCompleted / remainingAfterBaseline) * (100 - DEFAULT_PHASE_PERCENT))
-  );
-  const totalPercent = clampPercent(DEFAULT_TOTAL_PERCENT + Math.round((phasePercent - DEFAULT_PHASE_PERCENT) * 0.1));
+  const phasePercent = currentPhaseStages.length === 0
+    ? 0
+    : clampPercent(Math.round((completedInPhase / currentPhaseStages.length) * 100));
+  const totalPercent = clampPercent(Math.round(calculateWeightedTotalPercent(stages, completedStageIds)));
 
   return {
     totalLearnedPercent: totalPercent,
@@ -267,6 +275,32 @@ function buildProgressSnapshot(stages: LearningStage[], currentStageId: string |
     currentPhaseRemainingPercent: 100 - phasePercent,
     currentStageId
   };
+}
+
+function calculateWeightedTotalPercent(stages: LearningStage[], completedStageIds: Set<string>): number {
+  const stagesByPhase = new Map<number, LearningStage[]>();
+  for (const stage of stages) {
+    const stageNumber = parseStageNumber(stage.id);
+    if (!stageNumber) continue;
+    const phaseStages = stagesByPhase.get(stageNumber.phase) ?? [];
+    phaseStages.push(stage);
+    stagesByPhase.set(stageNumber.phase, phaseStages);
+  }
+
+  let totalPercent = 0;
+  let knownWeight = 0;
+  for (const [phase, phaseStages] of stagesByPhase) {
+    const weight = PHASE_WEIGHTS.get(phase) ?? 0;
+    if (weight <= 0 || phaseStages.length === 0) continue;
+    knownWeight += weight;
+    const completedCount = phaseStages.filter((stage) => completedStageIds.has(stage.id)).length;
+    totalPercent += weight * (completedCount / phaseStages.length);
+  }
+
+  if (knownWeight > 0 && knownWeight < 100) {
+    totalPercent = (totalPercent / knownWeight) * 100;
+  }
+  return totalPercent;
 }
 
 function clampPercent(value: number): number {
@@ -281,6 +315,17 @@ async function findNotePath(noteRoot: string, phase?: number): Promise<string | 
   ];
   for (const candidate of candidates) {
     if (await pathExists(candidate)) return candidate;
+  }
+  try {
+    const entries = await fs.readdir(noteRoot, { withFileTypes: true });
+    const phasePrefix = `phase-${phase}-`;
+    const matchingNote = entries
+      .filter((entry) => entry.isFile() && entry.name.startsWith(phasePrefix) && entry.name.endsWith(".md"))
+      .map((entry) => path.join(noteRoot, entry.name))
+      .sort((left, right) => left.localeCompare(right))[0];
+    if (matchingNote) return matchingNote;
+  } catch {
+    return undefined;
   }
   return undefined;
 }

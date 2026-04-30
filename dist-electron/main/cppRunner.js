@@ -403,8 +403,25 @@ function spawnProcess(command, args, stdin, timeoutMs, cwd) {
             clearTimeout(timer);
             resolve({ stdout, stderr, exitCode });
         });
-        child.stdin.end(stdin ?? "");
+        child.stdin.on("error", (error) => {
+            if ("code" in error && ["EPIPE", "EOF"].includes(String(error.code)))
+                return;
+            stderr = `${stderr}\n${error.message}`.trim();
+        });
+        try {
+            child.stdin.end(normalizeProcessStdin(stdin));
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            stderr = `${stderr}\n${message}`.trim();
+        }
     });
+}
+function normalizeProcessStdin(stdin) {
+    if (!stdin)
+        return "";
+    const normalized = stdin.replace(/\r\n?/g, "\n");
+    return normalized.endsWith("\n") ? normalized : `${normalized}\n`;
 }
 function getProcessErrorMessage(command, error) {
     if ("code" in error && error.code === "ENOENT") {
