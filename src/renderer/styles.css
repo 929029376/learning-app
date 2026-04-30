@@ -279,7 +279,7 @@ code {
   padding: 4px 8px;
   background: rgba(255, 255, 255, 0.58);
   color: var(--blue);
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-family: var(--editor-font-family, "Consolas", monospace);
   font-size: 12px;
 }
 
@@ -689,7 +689,7 @@ small {
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
-  font-family: "Cascadia Code", "Microsoft YaHei UI", monospace;
+  font-family: var(--editor-font-family, "Consolas", "Microsoft YaHei UI", monospace);
   line-height: 1.72;
 }
 
@@ -968,7 +968,7 @@ textarea {
 
 .tree-chevron {
   color: rgba(76, 103, 64, 0.72);
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-family: var(--editor-font-family, "Consolas", monospace);
   font-size: 11px;
   font-weight: 900;
   line-height: 1;
@@ -982,7 +982,7 @@ textarea {
   border-radius: 6px;
   color: #4d7f18;
   background: rgba(220, 233, 207, 0.8);
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-family: var(--editor-font-family, "Consolas", monospace);
   font-size: 8px;
   font-weight: 900;
 }
@@ -1004,7 +1004,7 @@ textarea {
   border-radius: 6px;
   color: #426028;
   background: rgba(220, 233, 207, 0.78);
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-family: var(--editor-font-family, "Consolas", monospace);
   font-size: 8px;
   font-weight: 900;
 }
@@ -1061,7 +1061,7 @@ textarea {
   border: 1px solid rgba(183, 139, 88, 0.22);
   border-radius: 999px;
   box-shadow: none;
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-family: var(--editor-font-family, "Consolas", monospace);
   font-size: 12px;
 }
 
@@ -1142,7 +1142,7 @@ textarea {
   background:
     linear-gradient(180deg, rgba(255, 248, 236, 0.98), rgba(248, 232, 207, 0.98)),
     radial-gradient(circle at right, rgba(242, 166, 90, 0.2), transparent 32%);
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-family: var(--editor-font-family, "Consolas", monospace);
 }
 
 .editor-titlebar strong {
@@ -1329,6 +1329,7 @@ textarea {
   background: linear-gradient(135deg, #de6b48, #9a3f24);
 }
 
+.font-family-control,
 .font-size-control {
   display: inline-flex;
   align-items: center;
@@ -1340,15 +1341,39 @@ textarea {
   background: rgba(255, 253, 247, 0.72);
 }
 
+.font-family-control select,
+.font-family-control input {
+  width: auto;
+  height: 28px;
+  min-height: 0;
+  border-color: rgba(67, 89, 55, 0.14);
+  border-radius: 8px;
+  padding: 5px 8px;
+  color: #344055;
+  background: rgba(255, 255, 255, 0.78);
+  font-family: var(--editor-font-family, "Consolas", monospace);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.font-family-control select {
+  min-width: 138px;
+}
+
+.font-family-control input {
+  min-width: 180px;
+}
+
 .font-size-control span {
   min-width: 42px;
   color: #526348;
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-family: var(--editor-font-family, "Consolas", monospace);
   font-size: 10.5px;
   font-weight: 900;
   text-align: center;
 }
 
+.code-lab .code-toolbar .font-family-control button,
 .code-lab .code-toolbar .font-size-control button {
   padding: 5px 7px;
   border-radius: 8px;
@@ -1433,7 +1458,7 @@ textarea {
   padding: 6px 8px;
   color: #263242;
   background: rgba(255, 253, 247, 0.96);
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-family: var(--editor-font-family, "Consolas", monospace);
   font-size: 11px;
 }
 
@@ -1614,7 +1639,7 @@ textarea {
   border-radius: 7px;
   color: #315a18;
   background: rgba(220, 233, 207, 0.82);
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-family: var(--editor-font-family, "Consolas", monospace);
   font-size: 8px;
   font-weight: 900;
 }
@@ -1723,7 +1748,7 @@ textarea {
 
 .console-header span {
   color: rgba(82, 99, 72, 0.72);
-  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-family: var(--editor-font-family, "Consolas", monospace);
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1755,7 +1780,7 @@ textarea {
   border-radius: 0;
   color: #263242;
   background: rgba(255, 253, 247, 0.94);
-  font-family: "Cascadia Code", "JetBrains Mono", "Microsoft YaHei UI", monospace;
+  font-family: var(--editor-font-family, "Consolas", "Microsoft YaHei UI", monospace);
   font-size: 13px;
   line-height: 1.7;
   overflow-y: auto;

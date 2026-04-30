@@ -37,6 +37,8 @@ const progressSentence = "总进度：已学习约 21%，还剩约 79%。当前 
 const columnStorageKey = "learning-studio-column-percents";
 const minimizedPanelStorageKey = "learning-studio-minimized-panels";
 const editorFontSizeStorageKey = "learning-studio-editor-font-size";
+const editorFontFamilyStorageKey = "learning-studio-editor-font-family";
+const customEditorFontFamilyStorageKey = "learning-studio-custom-editor-font-family";
 const fileTreeWidthStorageKey = "learning-studio-file-tree-width";
 const fileTreeHiddenStorageKey = "learning-studio-file-tree-hidden";
 const defaultColumnPercents: ColumnPercents = { left: 22, middle: 34, right: 44 };
@@ -44,11 +46,23 @@ const minimumColumnPercents: ColumnPercents = { left: 15, middle: 24, right: 28 
 const defaultEditorFontSize = 13.5;
 const minimumEditorFontSize = 11;
 const maximumEditorFontSize = 22;
+const defaultEditorFontFamilyId = "consolas";
 const defaultFileTreeWidth = 220;
 const minimumFileTreeWidth = 120;
 const maximumFileTreeWidth = 520;
 const maximumProgramInputLength = 12000;
 const workspacePanels: WorkspacePanel[] = ["progress", "lesson", "studio"];
+
+const editorFontOptions = [
+  { id: "consolas", label: "Consolas", family: '"Consolas", "Microsoft YaHei UI", monospace' },
+  { id: "jetbrains", label: "JetBrains Mono", family: '"JetBrains Mono", "Microsoft YaHei UI", monospace' },
+  { id: "cascadia", label: "Cascadia Code", family: '"Cascadia Code", "Microsoft YaHei UI", monospace' },
+  { id: "fira", label: "Fira Code", family: '"Fira Code", "Microsoft YaHei UI", monospace' },
+  { id: "source-code-pro", label: "Source Code Pro", family: '"Source Code Pro", "Microsoft YaHei UI", monospace' },
+  { id: "sarasa", label: "Sarasa Mono SC", family: '"Sarasa Mono SC", "Microsoft YaHei UI", monospace' },
+  { id: "system", label: "系统等宽", family: 'ui-monospace, "SFMono-Regular", "Cascadia Mono", "Consolas", "Liberation Mono", monospace' },
+  { id: "custom", label: "自定义", family: "" }
+];
 
 type ResizeHandle = "left" | "right";
 
@@ -363,7 +377,7 @@ const codeEditorTheme = EditorView.theme({
     fontSize: "var(--editor-font-size, 13.5px)"
   },
   ".cm-content": {
-    fontFamily: '"Cascadia Code", "JetBrains Mono", monospace',
+    fontFamily: "var(--editor-font-family, Consolas, monospace)",
     padding: "14px 0"
   },
   ".cm-line": {
@@ -419,6 +433,8 @@ export function App() {
   const [isPending, startTransition] = useTransition();
   const [columnPercents, setColumnPercents] = useState<ColumnPercents>(() => loadColumnPercents());
   const [editorFontSize, setEditorFontSize] = useState(() => loadEditorFontSize());
+  const [editorFontFamilyId, setEditorFontFamilyId] = useState(() => loadEditorFontFamilyId());
+  const [customEditorFontFamily, setCustomEditorFontFamily] = useState(() => loadCustomEditorFontFamily());
   const [fileTreeWidth, setFileTreeWidth] = useState(() => loadFileTreeWidth());
   const [isFileTreeHidden, setIsFileTreeHidden] = useState(() => loadFileTreeHidden());
   const [stagePhaseFilter, setStagePhaseFilter] = useState("all");
@@ -461,12 +477,14 @@ export function App() {
   const visiblePanels = focusedPanel ? workspacePanels : workspacePanels.filter((panel) => !hiddenPanels.includes(panel));
   const visiblePanelCount = focusedPanel ? 1 : Math.max(1, visiblePanels.length);
   const workspacePanelClassNames = focusedPanel ? "" : [`panel-count-${visiblePanelCount}`, ...hiddenPanels.map((panel) => `hidden-${panel}`)].join(" ");
+  const editorFontFamily = getEditorFontFamily(editorFontFamilyId, customEditorFontFamily);
   const workspaceStyle = {
     "--left-column": `${columnPercents.left}fr`,
     "--middle-column": `${columnPercents.middle}fr`,
     "--right-column": `${columnPercents.right}fr`,
     "--docked-panel-count": String(visiblePanelCount),
-    "--editor-font-size": `${editorFontSize}px`
+    "--editor-font-size": `${editorFontSize}px`,
+    "--editor-font-family": editorFontFamily
   } as CSSProperties;
   const miniIdeStyle = {
     "--file-tree-width": `${fileTreeWidth}px`
@@ -511,7 +529,7 @@ export function App() {
 
   useEffect(() => {
     scheduleEditorMeasure();
-  }, [activeFilePath, columnPercents, detachedPanels, editorFontSize, fileTreeWidth, focusedPanel, isFileTreeHidden, minimizedPanels, openFilePaths.length, visiblePanelCount]);
+  }, [activeFilePath, columnPercents, customEditorFontFamily, detachedPanels, editorFontFamilyId, editorFontSize, fileTreeWidth, focusedPanel, isFileTreeHidden, minimizedPanels, openFilePaths.length, visiblePanelCount]);
 
   useEffect(() => {
     localStorage.setItem(columnStorageKey, JSON.stringify(columnPercents));
@@ -524,6 +542,14 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(editorFontSizeStorageKey, String(editorFontSize));
   }, [editorFontSize]);
+
+  useEffect(() => {
+    localStorage.setItem(editorFontFamilyStorageKey, editorFontFamilyId);
+  }, [editorFontFamilyId]);
+
+  useEffect(() => {
+    localStorage.setItem(customEditorFontFamilyStorageKey, customEditorFontFamily);
+  }, [customEditorFontFamily]);
 
   useEffect(() => {
     localStorage.setItem(fileTreeWidthStorageKey, String(fileTreeWidth));
@@ -818,6 +844,11 @@ export function App() {
 
   function resetEditorFontSize() {
     setEditorFontSize(defaultEditorFontSize);
+  }
+
+  function resetEditorFontFamily() {
+    setEditorFontFamilyId(defaultEditorFontFamilyId);
+    setCustomEditorFontFamily("");
   }
 
   function beginCreateEditorFile() {
@@ -1310,7 +1341,7 @@ export function App() {
                           }}
                           codeTagProps={{
                             style: {
-                              fontFamily: '"Cascadia Code", "JetBrains Mono", "Microsoft YaHei UI", monospace'
+                              fontFamily: editorFontFamily
                             }
                           }}
                         >
@@ -1360,6 +1391,33 @@ export function App() {
               <button className="ghost-button" onClick={persistActiveFile} disabled={!activeDirty}>保存当前</button>
               <button className="ghost-button danger-button" onClick={() => void deleteActiveEditorFile()} disabled={!activeFilePath}>删除当前</button>
               <button className="ghost-button" onClick={persistAllOpenFiles} disabled={!projectDirty}>保存全部</button>
+              <div className="font-family-control" aria-label="代码字体">
+                <select
+                  value={editorFontFamilyId}
+                  onChange={(event) => setEditorFontFamilyId(event.target.value)}
+                  title="代码字体"
+                >
+                  {editorFontOptions.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </select>
+                {editorFontFamilyId === "custom" && (
+                  <input
+                    value={customEditorFontFamily}
+                    placeholder="Maple Mono, monospace"
+                    spellCheck={false}
+                    onChange={(event) => setCustomEditorFontFamily(sanitizeEditorFontFamily(event.target.value))}
+                    title="自定义 CSS 字体族"
+                  />
+                )}
+                <button
+                  className="ghost-button"
+                  onClick={resetEditorFontFamily}
+                  disabled={editorFontFamilyId === defaultEditorFontFamilyId && customEditorFontFamily === ""}
+                >
+                  字体重置
+                </button>
+              </div>
               <div className="font-size-control" aria-label="代码字号调节">
                 <button className="ghost-button" onClick={() => changeEditorFontSize(-1)} disabled={editorFontSize <= minimumEditorFontSize}>A-</button>
                 <span>{editorFontSize}px</span>
@@ -1529,6 +1587,32 @@ function loadEditorFontSize(): number {
   const value = Number(raw);
   if (!Number.isFinite(value)) return defaultEditorFontSize;
   return roundFontSize(clamp(value, minimumEditorFontSize, maximumEditorFontSize));
+}
+
+function loadEditorFontFamilyId(): string {
+  const raw = localStorage.getItem(editorFontFamilyStorageKey);
+  if (raw && editorFontOptions.some((option) => option.id === raw)) return raw;
+  return defaultEditorFontFamilyId;
+}
+
+function loadCustomEditorFontFamily(): string {
+  return sanitizeEditorFontFamily(localStorage.getItem(customEditorFontFamilyStorageKey) ?? "");
+}
+
+function getEditorFontFamily(fontFamilyId: string, customFontFamily: string): string {
+  if (fontFamilyId === "custom") {
+    return customFontFamily.trim() || editorFontOptions.find((option) => option.id === defaultEditorFontFamilyId)?.family || "Consolas, monospace";
+  }
+  return editorFontOptions.find((option) => option.id === fontFamilyId)?.family
+    ?? editorFontOptions.find((option) => option.id === defaultEditorFontFamilyId)?.family
+    ?? "Consolas, monospace";
+}
+
+function sanitizeEditorFontFamily(value: string): string {
+  return value
+    .replace(/[;{}<>]/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 160);
 }
 
 function loadFileTreeWidth(): number {
