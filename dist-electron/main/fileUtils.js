@@ -25,6 +25,8 @@ exports.DEFAULT_STUDY_ROOT = getDefaultStudyRoot();
 exports.LEARNING_DATA_DIR = ".learning-data";
 const SOURCE_EXTENSIONS = new Set([
     ".md",
+    ".markdown",
+    ".mdown",
     ".txt",
     ".pdf",
     ".pptx",
@@ -67,7 +69,7 @@ function isSupportedSource(filePath) {
 }
 function getSourceType(filePath) {
     const ext = node_path_1.default.extname(filePath).toLowerCase();
-    if (ext === ".md")
+    if (ext === ".md" || ext === ".markdown" || ext === ".mdown")
         return "markdown";
     if (ext === ".txt")
         return "text";

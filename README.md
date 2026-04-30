@@ -10,7 +10,7 @@ The app is built with Electron, React, Vite, TypeScript, CodeMirror, and sql.js.
 
 - Course route discovery from a local study directory.
 - Progress tracking for learning stages, including completed, learning, and not-started states.
-- Markdown lesson rendering with syntax-highlighted C++ examples.
+- Markdown lesson rendering with syntax-highlighted C++ examples and flexible stage-note matching.
 - Built-in code workspace with file tree, tabs, editable C++/header/Makefile/Markdown/text files, adjustable font size, and resizable panels.
 - Live C++ diagnostics through `g++ -fsyntax-only`.
 - Save and run exercises from single-file or multi-file practice folders.
@@ -84,6 +84,8 @@ Recommended structure:
 study-root/
   phase-notes/
     phase-2-cpp-foundation.md
+  docs/
+    course.markdown
   practice/
     phase1/
       makefile-lab-01/
@@ -91,6 +93,7 @@ study-root/
         main.cpp
     phase2/
       stage-2-11-struct-basics/
+        README.md
         main.cpp
       stage-2-12-pointer-basics/
         main.cpp
@@ -101,6 +104,46 @@ Stage folders are discovered from names such as:
 - `stage-2-11-struct-basics`
 - `stage-2-12-pointer-basics`
 - `makefile-lab-01`
+
+### Markdown Course Notes
+
+Markdown files can use `.md`, `.markdown`, or `.mdown`.
+
+The app looks for lesson notes in common course-material folders such as:
+
+- `phase-notes`
+- `notes`
+- `course-notes`
+- `lesson-notes`
+- `lessons`
+- `docs`
+- `study-system`
+- matching practice stage folders
+
+It also scans Markdown candidates under the selected study root when matching a note to a stage. It ignores generated or dependency folders such as `.git`, `.learning-data`, `node_modules`, `dist`, and `build`.
+
+To reliably attach a Markdown file to a stage, include the stage number or stage id in the filename, path, or heading. Examples:
+
+```text
+stage-2-11-struct-basics.md
+2.11-struct-basics.md
+practice/phase2/stage-2-11-struct-basics/README.md
+docs/course.markdown
+```
+
+For a shared course note file, use headings that contain the stage marker:
+
+```markdown
+## 2.11 struct basics
+
+Lesson content for structures.
+
+## 2.12 pointer basics
+
+Lesson content for pointers.
+```
+
+When a matching heading is found, the app displays that section until the next heading at the same or higher level. After adding, moving, or renaming study files, use the app's scan/refresh action so the course index and stage links are rebuilt.
 
 The app creates a `.learning-data` folder inside the selected study root:
 

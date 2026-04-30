@@ -10,6 +10,8 @@ export const LEARNING_DATA_DIR = ".learning-data";
 
 const SOURCE_EXTENSIONS = new Set([
   ".md",
+  ".markdown",
+  ".mdown",
   ".txt",
   ".pdf",
   ".pptx",
@@ -58,7 +60,7 @@ export function isSupportedSource(filePath: string): boolean {
 
 export function getSourceType(filePath: string): SourceType {
   const ext = path.extname(filePath).toLowerCase();
-  if (ext === ".md") return "markdown";
+  if (ext === ".md" || ext === ".markdown" || ext === ".mdown") return "markdown";
   if (ext === ".txt") return "text";
   if (ext === ".pdf") return "pdf";
   if (ext === ".docx") return "docx";

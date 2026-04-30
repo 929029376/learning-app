@@ -15,7 +15,7 @@ import { StudyDatabase } from "./database.js";
 import { buildCourseOverview } from "./course.js";
 
 const IGNORED_DIRS = new Set([".git", "node_modules", ".learning-data", "dist", "build"]);
-const PRIMARY_STUDY_DIRS = ["phase-notes", "practice", "study-system"];
+const PRIMARY_STUDY_DIRS = ["phase-notes", "notes", "course-notes", "lesson-notes", "lessons", "docs", "practice", "study-system"];
 const TEXT_SOURCE_LIMIT = 5 * 1024 * 1024;
 const DOCUMENT_SOURCE_LIMIT = 15 * 1024 * 1024;
 const PARSE_TIMEOUT_MS = 15000;

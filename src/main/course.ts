@@ -7,6 +7,10 @@ import { ensureDir, getLearningDataPath, pathExists, toRelativePath } from "./fi
 const DEFAULT_CURRENT_STAGE_ID = "stage-2-13-vector-basics";
 const DEFAULT_PHASE = "Phase 2";
 const COMPLETED_STAGE_MARKERS_DIR = "completed-stages";
+const NOTE_DIR_NAMES = ["phase-notes", "notes", "course-notes", "lesson-notes", "lessons", "docs", "study-system"];
+const NOTE_EXTENSIONS = new Set([".md", ".markdown", ".mdown"]);
+const NOTE_SCAN_IGNORED_DIRS = new Set([".git", ".learning-data", "node_modules", "dist", "build"]);
+const NOTE_SCAN_FILE_LIMIT = 500;
 const PHASE_WEIGHTS = new Map<number, number>([
   [1, 10],
   [2, 15],
@@ -139,7 +143,8 @@ async function getStatefulStages(studyRoot: string): Promise<LearningStage[]> {
 
 async function discoverStages(studyRoot: string): Promise<LearningStage[]> {
   const practiceRoot = path.join(studyRoot, "practice");
-  const noteRoot = path.join(studyRoot, "phase-notes");
+  const noteRoots = await getNoteRootCandidates(studyRoot);
+  const noteFiles = await collectMarkdownFilesFromRoots(noteRoots);
   const stages: LearningStage[] = [];
 
   if (await pathExists(practiceRoot)) {
@@ -152,7 +157,7 @@ async function discoverStages(studyRoot: string): Promise<LearningStage[]> {
         phase: `Phase ${stageNumber.phase}`,
         status: "not-started",
         grade: getKnownGrade(dirName),
-        notePath: await findNotePath(noteRoot, stageNumber.phase),
+        notePath: await findNotePath(noteRoots, noteFiles, stageNumber, dirName, dirPath),
         practicePath: dirPath
       });
     });
@@ -307,26 +312,106 @@ function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, value));
 }
 
-async function findNotePath(noteRoot: string, phase?: number): Promise<string | undefined> {
-  if (!phase) return undefined;
-  const candidates = [
-    path.join(noteRoot, `phase-${phase}-cpp-foundation.md`),
-    path.join(noteRoot, `phase-${phase}.md`)
-  ];
+async function getNoteRootCandidates(studyRoot: string): Promise<string[]> {
+  const roots: string[] = [];
+  for (const dirName of NOTE_DIR_NAMES) {
+    const dirPath = path.join(studyRoot, dirName);
+    try {
+      const stat = await fs.stat(dirPath);
+      if (stat.isDirectory()) roots.push(dirPath);
+    } catch {
+      // Optional note directories are allowed to be absent.
+    }
+  }
+  roots.push(studyRoot);
+  return uniquePaths(roots);
+}
+
+async function collectMarkdownFilesFromRoots(roots: string[]): Promise<string[]> {
+  const files: string[] = [];
+  const seen = new Set<string>();
+  for (const root of roots) {
+    const rootFiles = await collectMarkdownFiles(root);
+    for (const filePath of rootFiles) {
+      const key = path.resolve(filePath).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      files.push(filePath);
+      if (files.length >= NOTE_SCAN_FILE_LIMIT) return files.sort((left, right) => left.localeCompare(right));
+    }
+  }
+  return files.sort((left, right) => left.localeCompare(right));
+}
+
+async function findNotePath(
+  noteRoots: string[],
+  noteFiles: string[],
+  stageNumber?: { phase: number; stage: number },
+  stageId?: string,
+  practicePath?: string
+): Promise<string | undefined> {
+  if (!stageNumber) return undefined;
+
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (candidate: string) => {
+    if (!isMarkdownPath(candidate)) return;
+    const key = path.resolve(candidate).toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push(candidate);
+  };
+
+  const stageBaseNames = buildStageNoteBaseNames(stageNumber, stageId);
+  const phaseBaseNames = [`phase-${stageNumber.phase}-cpp-foundation`, `phase-${stageNumber.phase}`];
+  const phaseDirNames = [`phase-${stageNumber.phase}`, `phase${stageNumber.phase}`, `p${stageNumber.phase}`];
+
+  for (const root of noteRoots) {
+    for (const baseName of [...stageBaseNames, ...phaseBaseNames]) {
+      for (const extension of NOTE_EXTENSIONS) {
+        addCandidate(path.join(root, `${baseName}${extension}`));
+      }
+    }
+
+    for (const phaseDirName of phaseDirNames) {
+      for (const baseName of stageBaseNames) {
+        for (const extension of NOTE_EXTENSIONS) {
+          addCandidate(path.join(root, phaseDirName, `${baseName}${extension}`));
+        }
+      }
+    }
+  }
+
+  if (practicePath) {
+    const practiceBaseNames = ["README", "Readme", "readme", "notes", "NOTES", ...stageBaseNames];
+    for (const baseName of practiceBaseNames) {
+      for (const extension of NOTE_EXTENSIONS) {
+        addCandidate(path.join(practicePath, `${baseName}${extension}`));
+      }
+    }
+    for (const filePath of await collectMarkdownFiles(practicePath)) addCandidate(filePath);
+  }
+
+  for (const filePath of noteFiles) addCandidate(filePath);
+
+  const existingCandidates: string[] = [];
   for (const candidate of candidates) {
-    if (await pathExists(candidate)) return candidate;
+    if (await pathExists(candidate)) existingCandidates.push(candidate);
   }
-  try {
-    const entries = await fs.readdir(noteRoot, { withFileTypes: true });
-    const phasePrefix = `phase-${phase}-`;
-    const matchingNote = entries
-      .filter((entry) => entry.isFile() && entry.name.startsWith(phasePrefix) && entry.name.endsWith(".md"))
-      .map((entry) => path.join(noteRoot, entry.name))
-      .sort((left, right) => left.localeCompare(right))[0];
-    if (matchingNote) return matchingNote;
-  } catch {
-    return undefined;
-  }
+
+  const scored = await Promise.all(
+    existingCandidates.map(async (filePath, index) => ({
+      filePath,
+      index,
+      score: await scoreNoteCandidate(filePath, stageNumber, stageId, practicePath)
+    }))
+  );
+
+  const bestMatch = scored
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index)[0];
+  if (bestMatch) return bestMatch.filePath;
+  if (scored.length === 1) return scored[0].filePath;
   return undefined;
 }
 
@@ -339,21 +424,170 @@ async function findDefaultExercisePath(practicePath: string): Promise<string | u
 }
 
 function extractStageExcerpt(markdown: string, stage: LearningStage): string {
-  const numberMatch = stage.title.match(/^(\d+\.\d+)/);
-  if (!numberMatch) return markdown.slice(0, 12000);
+  const stageNumber = parseStageNumber(stage.id);
+  if (!stageNumber) return markdown.slice(0, 12000);
 
-  const escapedNumber = numberMatch[1].replace(".", "\\.");
-  const headingPattern = new RegExp(`^(#{1,4})\\s+.*${escapedNumber}.*$`, "im");
-  const match = headingPattern.exec(markdown);
+  const stageMarkerPattern = buildStageMarkerPattern(stageNumber, stage.id);
+  const headingPattern = /^(#{1,6})\s+.*$/gm;
+  let match: RegExpExecArray | null = null;
+  while ((match = headingPattern.exec(markdown))) {
+    if (stageMarkerPattern.test(match[0])) break;
+  }
   if (!match) return markdown.slice(0, 12000);
 
   const currentLevel = match[1].length;
   const start = match.index;
-  const rest = markdown.slice(start + match[0].length);
-  const nextHeadingPattern = new RegExp(`^#{1,${currentLevel}}\\s+`, "m");
-  const nextHeading = nextHeadingPattern.exec(rest);
-  const end = nextHeading ? start + match[0].length + nextHeading.index : markdown.length;
+  const nextHeadingPattern = new RegExp(`^#{1,${currentLevel}}\\s+`, "gm");
+  nextHeadingPattern.lastIndex = start + match[0].length;
+  const nextHeading = nextHeadingPattern.exec(markdown);
+  const end = nextHeading ? nextHeading.index : markdown.length;
   return markdown.slice(start, end).trim();
+}
+
+function buildStageNoteBaseNames(stageNumber: { phase: number; stage: number }, stageId?: string): string[] {
+  return uniqueStrings([
+    stageId,
+    `stage-${stageNumber.phase}-${stageNumber.stage}`,
+    `phase-${stageNumber.phase}-stage-${stageNumber.stage}`,
+    `phase-${stageNumber.phase}-${stageNumber.stage}`,
+    `${stageNumber.phase}.${stageNumber.stage}`,
+    `${stageNumber.phase}-${stageNumber.stage}`,
+    `${stageNumber.phase}_${stageNumber.stage}`
+  ].filter((item): item is string => Boolean(item)));
+}
+
+async function collectMarkdownFiles(root: string): Promise<string[]> {
+  const files: string[] = [];
+  const seenDirs = new Set<string>();
+  await collectMarkdownFilesInDir(root, files, seenDirs);
+  return files.sort((left, right) => left.localeCompare(right));
+}
+
+async function collectMarkdownFilesInDir(currentDir: string, files: string[], seenDirs: Set<string>): Promise<void> {
+  if (files.length >= NOTE_SCAN_FILE_LIMIT) return;
+
+  const resolvedDir = path.resolve(currentDir);
+  const dirKey = resolvedDir.toLowerCase();
+  if (seenDirs.has(dirKey)) return;
+  seenDirs.add(dirKey);
+
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(resolvedDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (files.length >= NOTE_SCAN_FILE_LIMIT) return;
+    const entryPath = path.join(resolvedDir, entry.name);
+    if (entry.isDirectory()) {
+      if (!NOTE_SCAN_IGNORED_DIRS.has(entry.name.toLowerCase())) {
+        await collectMarkdownFilesInDir(entryPath, files, seenDirs);
+      }
+      continue;
+    }
+    if (entry.isFile() && isMarkdownPath(entryPath)) {
+      files.push(entryPath);
+    }
+  }
+}
+
+async function scoreNoteCandidate(
+  filePath: string,
+  stageNumber: { phase: number; stage: number },
+  stageId?: string,
+  practicePath?: string
+): Promise<number> {
+  let score = 0;
+  const normalizedPath = filePath.replace(/\\/g, "/").toLowerCase();
+  const baseName = path.basename(filePath, path.extname(filePath)).toLowerCase();
+  const fileName = path.basename(filePath).toLowerCase();
+  const stageMarkers = buildStageMarkers(stageNumber, stageId);
+  const stageMarkerPattern = buildStageMarkerPattern(stageNumber, stageId);
+
+  if (stageMarkers.some((marker) => baseName === marker || baseName.startsWith(`${marker}-`))) score += 500;
+  if (stageMarkerPattern.test(normalizedPath)) score += 180;
+  if (normalizedPath.includes(`/phase-${stageNumber.phase}/`) || normalizedPath.includes(`phase-${stageNumber.phase}-`)) {
+    score += 60;
+  }
+  if (fileName === `phase-${stageNumber.phase}-cpp-foundation.md` || fileName === `phase-${stageNumber.phase}.md`) {
+    score += 40;
+  }
+  if (practicePath && isPathWithin(practicePath, filePath)) {
+    score += 80;
+    if (fileName.startsWith("readme") || fileName.startsWith("notes")) score += 20;
+  }
+
+  const preview = await readMarkdownPreview(filePath);
+  if (hasStageHeading(preview, stageNumber, stageId)) score += 1000;
+  else if (stageMarkerPattern.test(preview)) score += 180;
+  if (buildPhaseMarkerPattern(stageNumber.phase).test(preview)) score += 30;
+
+  return score;
+}
+
+async function readMarkdownPreview(filePath: string): Promise<string> {
+  try {
+    return (await fs.readFile(filePath, "utf8")).slice(0, 120000);
+  } catch {
+    return "";
+  }
+}
+
+function hasStageHeading(markdown: string, stageNumber: { phase: number; stage: number }, stageId?: string): boolean {
+  const stageMarkerPattern = buildStageMarkerPattern(stageNumber, stageId);
+  return markdown
+    .split(/\r?\n/)
+    .some((line) => /^#{1,6}\s+/.test(line) && stageMarkerPattern.test(line));
+}
+
+function buildStageMarkers(stageNumber: { phase: number; stage: number }, stageId?: string): string[] {
+  return uniqueStrings([
+    stageId?.toLowerCase(),
+    `stage-${stageNumber.phase}-${stageNumber.stage}`,
+    `${stageNumber.phase}.${stageNumber.stage}`,
+    `${stageNumber.phase}-${stageNumber.stage}`,
+    `${stageNumber.phase}_${stageNumber.stage}`
+  ].filter((item): item is string => Boolean(item)));
+}
+
+function buildStageMarkerPattern(stageNumber: { phase: number; stage: number }, stageId?: string): RegExp {
+  const markers = buildStageMarkers(stageNumber, stageId).map(escapeRegExp).join("|");
+  return new RegExp(`(^|[^a-z0-9])(?:${markers})(?![a-z0-9])`, "i");
+}
+
+function buildPhaseMarkerPattern(phase: number): RegExp {
+  return new RegExp(`(^|[^a-z0-9])phase\\s*-?\\s*${phase}(?![a-z0-9])`, "i");
+}
+
+function isMarkdownPath(filePath: string): boolean {
+  return NOTE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function isPathWithin(basePath: string, targetPath: string): boolean {
+  const relative = path.relative(path.resolve(basePath), path.resolve(targetPath));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function uniquePaths(paths: string[]): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of paths) {
+    const key = path.resolve(item).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function readCourseState(studyRoot: string): Promise<CourseState> {
@@ -428,6 +662,7 @@ async function writeCourseState(studyRoot: string, state: CourseState): Promise<
 
 async function writeCourseJson(studyRoot: string, overview: CourseOverview, completedStageIds: string[]): Promise<void> {
   const coursePath = getCourseJsonPath(studyRoot);
+  await ensureDir(path.dirname(coursePath));
   const payload = {
     schemaVersion: 1,
     courseName: overview.courseName,

@@ -13,7 +13,7 @@ import type {
 } from "../shared/types.js";
 import { isPathInside } from "./fileUtils.js";
 
-const EDITABLE_EXTENSIONS = new Set([".cpp", ".cc", ".cxx", ".h", ".hpp", ".md", ".txt", ".mk"]);
+const EDITABLE_EXTENSIONS = new Set([".cpp", ".cc", ".cxx", ".h", ".hpp", ".md", ".markdown", ".mdown", ".txt", ".mk"]);
 const EDITABLE_FILENAMES = new Set(["Makefile", "makefile"]);
 const IGNORED_DIRS = new Set([".git", "build", "dist", ".learning-data", "node_modules"]);
 const MAX_EDITABLE_BYTES = 512 * 1024;
