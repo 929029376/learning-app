@@ -8,6 +8,7 @@ import type { ExerciseResult, LearningSource } from "../shared/types.js";
 import { ensureStudyDataDirs, getLearningDataPath } from "./fileUtils.js";
 
 let sqlPromise: Promise<SqlJsStatic> | null = null;
+const SOURCE_COLUMNS = "id, path, relativePath, type, size, mtimeMs, hash, parseStatus, errorMessage, title";
 
 function loadSql(): Promise<SqlJsStatic> {
   if (!sqlPromise) {
@@ -117,8 +118,32 @@ export class StudyDatabase {
     return (
       allRows<LearningSource>(
         this.db,
-        "SELECT id, path, relativePath, type, size, mtimeMs, hash, parseStatus, errorMessage, title FROM sources WHERE path = ?",
+        `SELECT ${SOURCE_COLUMNS} FROM sources WHERE path = ?`,
         [filePath]
+      )[0] ?? null
+    );
+  }
+
+  getSourceById(id: string): LearningSource | null {
+    return (
+      allRows<LearningSource>(
+        this.db,
+        `SELECT ${SOURCE_COLUMNS} FROM sources WHERE id = ?`,
+        [id]
+      )[0] ?? null
+    );
+  }
+
+  getSourceByRelativePath(relativePath: string): LearningSource | null {
+    return (
+      allRows<LearningSource>(
+        this.db,
+        `SELECT ${SOURCE_COLUMNS}
+         FROM sources
+         WHERE lower(replace(relativePath, char(92), '/')) = ?
+         ORDER BY updatedAt DESC
+         LIMIT 1`,
+        [normalizeRelativePathForLookup(relativePath)]
       )[0] ?? null
     );
   }
@@ -126,7 +151,7 @@ export class StudyDatabase {
   listSources(): LearningSource[] {
     return allRows<LearningSource>(
       this.db,
-      "SELECT id, path, relativePath, type, size, mtimeMs, hash, parseStatus, errorMessage, title FROM sources ORDER BY relativePath ASC"
+      `SELECT ${SOURCE_COLUMNS} FROM sources ORDER BY relativePath ASC`
     );
   }
 
@@ -134,7 +159,8 @@ export class StudyDatabase {
     const statement = this.db.prepare(`
       INSERT INTO sources (id, path, relativePath, type, size, mtimeMs, hash, parseStatus, errorMessage, title, updatedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(path) DO UPDATE SET
+      ON CONFLICT(id) DO UPDATE SET
+        path = excluded.path,
         relativePath = excluded.relativePath,
         type = excluded.type,
         size = excluded.size,
@@ -238,6 +264,10 @@ export class StudyDatabase {
   getParsedSourceCount(): number {
     return firstValue<number>(this.db, "SELECT COUNT(*) AS count FROM sources WHERE parseStatus = 'parsed'") ?? 0;
   }
+}
+
+function normalizeRelativePathForLookup(relativePath: string): string {
+  return relativePath.replace(/\\/g, "/").toLowerCase();
 }
 
 export function cryptoRandomId(): string {

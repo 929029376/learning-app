@@ -32,9 +32,13 @@ export async function scanStudyRoot(studyRoot: string): Promise<ScanResult> {
   for (const filePath of files) {
     const stat = await fs.stat(filePath);
     const relativePath = toRelativePath(studyRoot, filePath);
-    const existing = database.getSourceByPath(filePath);
+    const sourceId = sourceIdFromRelativePath(relativePath);
+    const existing =
+      database.getSourceById(sourceId) ??
+      database.getSourceByRelativePath(relativePath) ??
+      database.getSourceByPath(filePath);
     const baseSource: LearningSource = {
-      id: existing?.id ?? sourceIdFromRelativePath(relativePath),
+      id: existing?.id ?? sourceId,
       path: filePath,
       relativePath,
       type: getSourceType(filePath),

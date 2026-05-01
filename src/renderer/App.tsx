@@ -638,16 +638,20 @@ export function App() {
 
   async function scanAndLoad(root: string, preferredStageId?: string | null) {
     setStatus("正在扫描资料、建立索引和刷新进度...");
-    const result: ScanResult = await window.learningApi.scanStudyRoot(root);
-    startTransition(() => {
-      setOverview(result.overview);
-      setStatus(`扫描完成：新增/更新 ${result.parsedCount} 个文件，跳过 ${result.skippedCount} 个文件，失败 ${result.failedCount} 个文件。`);
-    });
-    const nextStageId = preferredStageId && result.overview.stages.some((stage) => stage.id === preferredStageId)
-      ? preferredStageId
-      : result.overview.progress.currentStageId ?? result.overview.stages[0]?.id;
-    if (nextStageId) {
-      await loadStage(root, nextStageId);
+    try {
+      const result: ScanResult = await window.learningApi.scanStudyRoot(root);
+      startTransition(() => {
+        setOverview(result.overview);
+        setStatus(`扫描完成：新增/更新 ${result.parsedCount} 个文件，跳过 ${result.skippedCount} 个文件，失败 ${result.failedCount} 个文件。`);
+      });
+      const nextStageId = preferredStageId && result.overview.stages.some((stage) => stage.id === preferredStageId)
+        ? preferredStageId
+        : result.overview.progress.currentStageId ?? result.overview.stages[0]?.id;
+      if (nextStageId) {
+        await loadStage(root, nextStageId);
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? `扫描失败：${error.message}` : `扫描失败：${String(error)}`);
     }
   }
 
