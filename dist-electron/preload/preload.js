@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const learningApi = {
     getDefaultStudyRoot: () => electron_1.ipcRenderer.invoke("study:getDefaultStudyRoot"),
+    isStudyRootAvailable: (studyRoot) => electron_1.ipcRenderer.invoke("study:isStudyRootAvailable", studyRoot),
     selectStudyRoot: () => electron_1.ipcRenderer.invoke("study:selectStudyRoot"),
     scanStudyRoot: (studyRoot) => electron_1.ipcRenderer.invoke("study:scanStudyRoot", studyRoot),
     getCourseOverview: (studyRoot) => electron_1.ipcRenderer.invoke("study:getCourseOverview", studyRoot),

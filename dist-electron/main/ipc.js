@@ -12,6 +12,9 @@ function registerIpcHandlers() {
     electron_1.ipcMain.handle("study:getDefaultStudyRoot", async () => {
         return (await (0, fileUtils_js_1.pathExists)(fileUtils_js_1.DEFAULT_STUDY_ROOT)) ? fileUtils_js_1.DEFAULT_STUDY_ROOT : null;
     });
+    electron_1.ipcMain.handle("study:isStudyRootAvailable", async (_event, studyRoot) => {
+        return (0, fileUtils_js_1.isDirectory)(studyRoot);
+    });
     electron_1.ipcMain.handle("study:selectStudyRoot", async () => {
         const result = await electron_1.dialog.showOpenDialog({
             title: "Select study directory",

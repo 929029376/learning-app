@@ -4,13 +4,17 @@ import type { CreateTextFileRequest, DeleteTextFileRequest, ListExerciseFilesReq
 import { completeStage, getStageContent, setCurrentStage } from "./course.js";
 import { runCppExercise, runExerciseProject, validateCppContent } from "./cppRunner.js";
 import { StudyDatabase } from "./database.js";
-import { DEFAULT_STUDY_ROOT, pathExists } from "./fileUtils.js";
+import { DEFAULT_STUDY_ROOT, isDirectory, pathExists } from "./fileUtils.js";
 import { getCourseOverview, scanStudyRoot } from "./scanner.js";
 import { createTextFile, deleteTextFile, listExerciseFiles, readTextFile, saveTextFile } from "./textFile.js";
 
 export function registerIpcHandlers(): void {
   ipcMain.handle("study:getDefaultStudyRoot", async () => {
     return (await pathExists(DEFAULT_STUDY_ROOT)) ? DEFAULT_STUDY_ROOT : null;
+  });
+
+  ipcMain.handle("study:isStudyRootAvailable", async (_event, studyRoot: string) => {
+    return isDirectory(studyRoot);
   });
 
   ipcMain.handle("study:selectStudyRoot", async () => {

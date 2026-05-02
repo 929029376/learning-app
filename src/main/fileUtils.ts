@@ -37,6 +37,15 @@ export async function pathExists(targetPath: string): Promise<boolean> {
   }
 }
 
+export async function isDirectory(targetPath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(targetPath);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export async function ensureDir(targetPath: string): Promise<void> {
   await fs.mkdir(targetPath, { recursive: true });
 }

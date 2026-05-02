@@ -35,7 +35,14 @@ const KNOWN_GRADES = new Map<string, string>([
   ["stage-2-9", "A-"],
   ["stage-2-10", "A"],
   ["stage-2-11", "A-"],
-  ["stage-2-12", "A-"]
+  ["stage-2-12", "A-"],
+  ["stage-2-13", "A-"],
+  ["stage-2-14", "A-"],
+  ["stage-2-15", "A-"],
+  ["stage-3-1", "A-"],
+  ["stage-3-2", "A"],
+  ["stage-3-3", "A"],
+  ["stage-3-4", "A"]
 ]);
 
 interface CourseState {
@@ -113,6 +120,14 @@ export async function getStageContent(studyRoot: string, stageId: string, source
 
 export async function completeStage(studyRoot: string, stageId: string, sources: LearningSource[]): Promise<CourseOverview> {
   const stages = await getStatefulStages(studyRoot);
+  const stage = stages.find((item) => item.id === stageId);
+  if (!stage) {
+    throw new Error("未找到当前小节，无法标记完成。请重新扫描学习目录后再试。");
+  }
+  if (!stage.grade) {
+    throw new Error("还没有检测到本节练习成绩，不能标记完成。请先完成练习并让老师检查评分。");
+  }
+
   const state = await readCourseState(studyRoot);
   const completedStageIds = getCompletedStageIds(stages, state);
   completedStageIds.add(stageId);
@@ -156,7 +171,7 @@ async function discoverStages(studyRoot: string): Promise<LearningStage[]> {
         title: formatStageTitle(dirName, stageNumber),
         phase: `Phase ${stageNumber.phase}`,
         status: "not-started",
-        grade: getKnownGrade(dirName),
+        grade: (await readStageGrade(dirPath)) ?? getKnownGrade(dirName),
         notePath: await findNotePath(noteRoots, noteFiles, stageNumber, dirName, dirPath),
         practicePath: dirPath
       });
@@ -216,6 +231,25 @@ function getKnownGrade(stageId: string): string | undefined {
     if (stageId === prefix || stageId.startsWith(`${prefix}-`)) return grade;
   }
   return undefined;
+}
+
+async function readStageGrade(practicePath: string): Promise<string | undefined> {
+  for (const filename of ["README.md", "README.markdown", "README.mdown"]) {
+    const readmePath = path.join(practicePath, filename);
+    try {
+      const content = await fs.readFile(readmePath, "utf8");
+      const grade = extractStageGrade(content);
+      if (grade) return grade;
+    } catch {
+      // Missing README files are allowed for generated or external stages.
+    }
+  }
+  return undefined;
+}
+
+function extractStageGrade(markdown: string): string | undefined {
+  const match = markdown.match(/(?:当前评分|评分|Grade)\s*[:：]\s*`?([A-F][+-]?|Pass|Passed)`?/i);
+  return match?.[1];
 }
 
 function applyStageState(stages: LearningStage[], currentStageId: string | undefined, completedStageIds: Set<string>): LearningStage[] {

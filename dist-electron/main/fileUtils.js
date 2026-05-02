@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LEARNING_DATA_DIR = exports.DEFAULT_STUDY_ROOT = void 0;
 exports.pathExists = pathExists;
+exports.isDirectory = isDirectory;
 exports.ensureDir = ensureDir;
 exports.getLearningDataPath = getLearningDataPath;
 exports.getRunsPath = getRunsPath;
@@ -46,6 +47,15 @@ async function pathExists(targetPath) {
     try {
         await promises_1.default.access(targetPath);
         return true;
+    }
+    catch {
+        return false;
+    }
+}
+async function isDirectory(targetPath) {
+    try {
+        const stat = await promises_1.default.stat(targetPath);
+        return stat.isDirectory();
     }
     catch {
         return false;

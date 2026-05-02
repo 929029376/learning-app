@@ -33,7 +33,8 @@ import type {
   WorkspacePanel
 } from "../shared/types";
 
-const progressSentence = "总进度：已学习约 21%，还剩约 79%。当前 Phase 2：已学习约 70%，还剩约 30%。";
+const fallbackProgressSentence = "总进度：已学习约 25%，还剩约 75%。当前 Phase 3：已学习约 0%，还剩约 100%。";
+const studyRootStorageKey = "learning-studio-study-root";
 const columnStorageKey = "learning-studio-column-percents";
 const minimizedPanelStorageKey = "learning-studio-minimized-panels";
 const editorFontSizeStorageKey = "learning-studio-editor-font-size";
@@ -51,6 +52,7 @@ const defaultFileTreeWidth = 220;
 const minimumFileTreeWidth = 120;
 const maximumFileTreeWidth = 520;
 const maximumProgramInputLength = 12000;
+const autoSaveDelayMs = 1200;
 const workspacePanels: WorkspacePanel[] = ["progress", "lesson", "studio"];
 
 const editorFontOptions = [
@@ -454,7 +456,9 @@ export function App() {
   const stagePhaseOptions = getStagePhaseOptions(overview?.stages ?? []);
   const visibleStages = (overview?.stages ?? []).filter((stage) => stagePhaseFilter === "all" || stage.phase === stagePhaseFilter);
   const stageRouteCounter = formatStageRouteCounter(visibleStages, currentStageId);
+  const progressSentence = formatProgressSentence(overview?.progress);
   const fileTree = buildFileTree(exerciseFiles);
+  const canCompleteCurrentStage = Boolean(stageContent?.stage.grade);
   const activeCode = activeFilePath ? fileContents[activeFilePath] ?? "" : "";
   const projectCompletionSourceText = useMemo(
     () => getProjectCompletionSourceText(fileContents, activeFilePath, activeCode),
@@ -581,6 +585,44 @@ export function App() {
   }, [isCreatingFile]);
 
   useEffect(() => {
+    if (!studyRoot) return;
+    const dirtyFilePaths = openFilePaths.filter((filePath) => {
+      const content = fileContents[filePath];
+      return content !== undefined && content !== savedFileContents[filePath];
+    });
+    if (dirtyFilePaths.length === 0) return;
+
+    const timer = window.setTimeout(async () => {
+      let savedCount = 0;
+      for (const filePath of dirtyFilePaths) {
+        const content = fileContents[filePath];
+        if (content === undefined || content === savedFileContents[filePath]) continue;
+
+        try {
+          const file = await window.learningApi.saveTextFile({
+            studyRoot,
+            filePath,
+            content
+          });
+          savedCount += 1;
+          setSavedFileContents((current) => ({ ...current, [file.path]: file.content }));
+        } catch (error) {
+          setCodeStatus(error instanceof Error ? `自动保存失败：${error.message}` : `自动保存失败：${String(error)}`);
+          return;
+        }
+      }
+
+      if (savedCount === 1) {
+        setCodeStatus(`已自动保存 ${shortPath(dirtyFilePaths[0])}`);
+      } else if (savedCount > 1) {
+        setCodeStatus(`已自动保存 ${savedCount} 个文件。`);
+      }
+    }, autoSaveDelayMs);
+
+    return () => window.clearTimeout(timer);
+  }, [fileContents, openFilePaths, savedFileContents, studyRoot]);
+
+  useEffect(() => {
     const requestId = liveDiagnosticRequestRef.current + 1;
     liveDiagnosticRequestRef.current = requestId;
 
@@ -620,23 +662,61 @@ export function App() {
   }, [activeCode, activeFilePath, practicePath, studyRoot]);
 
   async function boot() {
-    const defaultRoot = initialStudyRoot || (await window.learningApi.getDefaultStudyRoot());
-    if (defaultRoot) {
-      setStudyRoot(defaultRoot);
-      await scanAndLoad(defaultRoot, initialStageId);
-    } else {
-      setStatus("请选择你的学习资料目录。");
+    const savedRoot = loadSavedStudyRoot();
+    const defaultRoot = await window.learningApi.getDefaultStudyRoot();
+    const candidates = uniqueStrings([initialStudyRoot, savedRoot, defaultRoot].filter((item): item is string => Boolean(item)));
+
+    for (const candidate of candidates) {
+      if (await window.learningApi.isStudyRootAvailable(candidate)) {
+        await openStudyRoot(candidate, initialStageId);
+        return;
+      }
     }
+
+    setStatus(savedRoot ? "上次学习目录暂时不可用，请确认共享文件夹已挂载，或重新选择学习资料目录。" : "请选择你的学习资料目录。");
   }
 
   async function chooseStudyRoot() {
     const selected = await window.learningApi.selectStudyRoot();
     if (!selected) return;
+    saveStudyRoot(selected);
     setStudyRoot(selected);
     await scanAndLoad(selected);
   }
 
+  async function openStudyRoot(root: string, preferredStageId?: string | null, forceScan = false) {
+    saveStudyRoot(root);
+    setStudyRoot(root);
+
+    if (forceScan) {
+      await scanAndLoad(root, preferredStageId);
+      return;
+    }
+
+    setStatus("正在打开上次学习目录...");
+    try {
+      const nextOverview = await window.learningApi.getCourseOverview(root);
+      if (nextOverview.stages.length === 0) {
+        await scanAndLoad(root, preferredStageId);
+        return;
+      }
+
+      setOverview(nextOverview);
+      const nextStageId = preferredStageId && nextOverview.stages.some((stage) => stage.id === preferredStageId)
+        ? preferredStageId
+        : nextOverview.progress.currentStageId ?? nextOverview.stages[0]?.id;
+      if (nextStageId) {
+        await loadStage(root, nextStageId);
+      } else {
+        setStatus("已打开上次学习目录。需要更新资料时可以点击刷新扫描。");
+      }
+    } catch {
+      await scanAndLoad(root, preferredStageId);
+    }
+  }
+
   async function scanAndLoad(root: string, preferredStageId?: string | null) {
+    saveStudyRoot(root);
     setStatus("正在扫描资料、建立索引和刷新进度...");
     try {
       const result: ScanResult = await window.learningApi.scanStudyRoot(root);
@@ -778,9 +858,25 @@ export function App() {
     }
   }
 
-  function closeEditorTab(filePath: string) {
+  async function closeEditorTab(filePath: string) {
     const isDirty = fileContents[filePath] !== savedFileContents[filePath];
-    if (isDirty && !window.confirm(`${getFileName(filePath)} 还没有保存，关闭会丢弃本次修改。确定关闭吗？`)) return;
+    if (isDirty) {
+      const content = fileContents[filePath];
+      if (content === undefined) return;
+
+      try {
+        const file = await window.learningApi.saveTextFile({
+          studyRoot,
+          filePath,
+          content
+        });
+        setSavedFileContents((current) => ({ ...current, [file.path]: file.content }));
+        setCodeStatus(`已自动保存 ${shortPath(file.path)}`);
+      } catch (error) {
+        setCodeStatus(error instanceof Error ? `关闭前自动保存失败：${error.message}` : `关闭前自动保存失败：${String(error)}`);
+        return;
+      }
+    }
 
     removeEditorFileFromState(filePath, "已关闭全部文件标签。");
   }
@@ -959,34 +1055,51 @@ export function App() {
 
   async function completeCurrentStage() {
     if (!studyRoot || !stageContent) return;
-    const nextOverview = await window.learningApi.completeStage({
-      studyRoot,
-      stageId: stageContent.stage.id
-    });
-    setOverview(nextOverview);
-    const nextStageId = nextOverview.progress.currentStageId ?? getNextStageId(nextOverview, stageContent.stage.id);
-    setStatus(`已标记完成：${stageContent.stage.title}。正在进入下一节...`);
-    if (nextStageId) {
-      await loadStage(studyRoot, nextStageId);
+    if (!canCompleteCurrentStage) {
+      setStatus("还没有检测到本节练习成绩，不能标记完成。请先完成练习并回到对话里让我检查评分。");
+      return;
+    }
+
+    try {
+      const nextOverview = await window.learningApi.completeStage({
+        studyRoot,
+        stageId: stageContent.stage.id
+      });
+      setOverview(nextOverview);
+      const nextStageId = nextOverview.progress.currentStageId ?? getNextStageId(nextOverview, stageContent.stage.id);
+      setStatus(`已标记完成：${stageContent.stage.title}。正在进入下一节...`);
+      if (nextStageId) {
+        await loadStage(studyRoot, nextStageId);
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
     }
   }
 
   async function openNextStage() {
     if (!studyRoot || !stageContent) return;
-
-    setStatus("正在标记当前小节完成，并准备进入下一节...");
-    const nextOverview = await window.learningApi.completeStage({
-      studyRoot,
-      stageId: stageContent.stage.id
-    });
-    setOverview(nextOverview);
-    const nextStageId = nextOverview.progress.currentStageId ?? getNextStageId(nextOverview, stageContent.stage.id);
-    if (!nextStageId) {
-      setStatus("当前已经是已识别阶段列表中的最后一节。");
+    if (!canCompleteCurrentStage) {
+      setStatus("还没有检测到本节练习成绩，不能进入完成流程。请先完成练习并回到对话里让我检查评分。");
       return;
     }
 
-    await loadStage(studyRoot, nextStageId);
+    setStatus("正在标记当前小节完成，并准备进入下一节...");
+    try {
+      const nextOverview = await window.learningApi.completeStage({
+        studyRoot,
+        stageId: stageContent.stage.id
+      });
+      setOverview(nextOverview);
+      const nextStageId = nextOverview.progress.currentStageId ?? getNextStageId(nextOverview, stageContent.stage.id);
+      if (!nextStageId) {
+        setStatus("当前已经是已识别阶段列表中的最后一节。");
+        return;
+      }
+
+      await loadStage(studyRoot, nextStageId);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function openPanelWindow(panel: WorkspacePanel, fullscreen = false) {
@@ -1429,8 +1542,22 @@ export function App() {
                 <button className="ghost-button" onClick={resetEditorFontSize} disabled={editorFontSize === defaultEditorFontSize}>重置</button>
               </div>
               <button onClick={saveAndRunExercise} disabled={!practicePath}>保存并运行</button>
-              <button className="ghost-button" onClick={completeCurrentStage} disabled={!stageContent}>本节完成</button>
-              <button className="ghost-button" onClick={openNextStage} disabled={!stageContent}>下一节</button>
+              <button
+                className="ghost-button"
+                onClick={completeCurrentStage}
+                disabled={!stageContent || !canCompleteCurrentStage}
+                title={canCompleteCurrentStage ? "已有本节评分，可以标记完成" : "需要老师检查并写入本节评分后才能完成"}
+              >
+                本节完成
+              </button>
+              <button
+                className="ghost-button"
+                onClick={openNextStage}
+                disabled={!stageContent || !canCompleteCurrentStage}
+                title={canCompleteCurrentStage ? "已有本节评分，可以进入下一节" : "需要老师检查并写入本节评分后才能进入下一节"}
+              >
+                下一节
+              </button>
             </div>
             <div className={isFileTreeHidden ? "mini-ide file-tree-hidden" : "mini-ide"} ref={miniIdeRef} style={miniIdeStyle}>
               <aside className="file-tree">
@@ -1572,6 +1699,20 @@ export function App() {
       </section>
     </main>
   );
+}
+
+function loadSavedStudyRoot(): string | null {
+  const value = localStorage.getItem(studyRootStorageKey)?.trim();
+  return value || null;
+}
+
+function saveStudyRoot(studyRoot: string): void {
+  const value = studyRoot.trim();
+  if (value) localStorage.setItem(studyRootStorageKey, value);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function loadColumnPercents(): ColumnPercents {
@@ -1965,6 +2106,11 @@ function progressRingStyle(percent: number) {
   return {
     background: `conic-gradient(#f2a65a ${percent * 3.6}deg, rgba(255,255,255,0.16) 0deg)`
   };
+}
+
+function formatProgressSentence(progress: CourseOverview["progress"] | undefined): string {
+  if (!progress) return fallbackProgressSentence;
+  return `总进度：已学习约 ${progress.totalLearnedPercent}%，还剩约 ${progress.totalRemainingPercent}%。当前 ${progress.currentPhase}：已学习约 ${progress.currentPhaseLearnedPercent}%，还剩约 ${progress.currentPhaseRemainingPercent}%。`;
 }
 
 function formatStageMeta(stage: LearningStage): string {

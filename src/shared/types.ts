@@ -179,6 +179,7 @@ export interface StageActionRequest {
 
 export interface LearningApi {
   getDefaultStudyRoot(): Promise<string | null>;
+  isStudyRootAvailable(studyRoot: string): Promise<boolean>;
   selectStudyRoot(): Promise<string | null>;
   scanStudyRoot(studyRoot: string): Promise<ScanResult>;
   getCourseOverview(studyRoot: string): Promise<CourseOverview>;

@@ -20,6 +20,7 @@ import type {
 
 const learningApi: LearningApi = {
   getDefaultStudyRoot: () => ipcRenderer.invoke("study:getDefaultStudyRoot"),
+  isStudyRootAvailable: (studyRoot: string) => ipcRenderer.invoke("study:isStudyRootAvailable", studyRoot),
   selectStudyRoot: () => ipcRenderer.invoke("study:selectStudyRoot"),
   scanStudyRoot: (studyRoot: string) => ipcRenderer.invoke("study:scanStudyRoot", studyRoot),
   getCourseOverview: (studyRoot: string) => ipcRenderer.invoke("study:getCourseOverview", studyRoot),
