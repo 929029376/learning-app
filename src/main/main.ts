@@ -135,6 +135,12 @@ function detachPanelWindow(request: PanelWindowRequest): void {
   const existingWindow = detachedPanelWindows.get(request.panel);
   if (existingWindow && !existingWindow.isDestroyed()) {
     existingWindow.setFullScreen(request.fullscreen ?? existingWindow.isFullScreen());
+    void loadApp(existingWindow, {
+      panel: request.panel,
+      fullscreen: existingWindow.isFullScreen(),
+      studyRoot: request.studyRoot,
+      stageId: request.stageId
+    });
     existingWindow.focus();
     broadcastDetachedPanels();
     return;

@@ -10,6 +10,7 @@ const node_path_1 = __importDefault(require("node:path"));
 const sql_js_1 = __importDefault(require("sql.js"));
 const fileUtils_js_1 = require("./fileUtils.js");
 let sqlPromise = null;
+const SOURCE_COLUMNS = "id, path, relativePath, type, size, mtimeMs, hash, parseStatus, errorMessage, title";
 function loadSql() {
     if (!sqlPromise) {
         sqlPromise = (0, sql_js_1.default)({
@@ -113,16 +114,27 @@ class StudyDatabase {
         node_fs_1.default.writeFileSync(this.dbPath, Buffer.from(this.db.export()));
     }
     getSourceByPath(filePath) {
-        return (allRows(this.db, "SELECT id, path, relativePath, type, size, mtimeMs, hash, parseStatus, errorMessage, title FROM sources WHERE path = ?", [filePath])[0] ?? null);
+        return (allRows(this.db, `SELECT ${SOURCE_COLUMNS} FROM sources WHERE path = ?`, [filePath])[0] ?? null);
+    }
+    getSourceById(id) {
+        return (allRows(this.db, `SELECT ${SOURCE_COLUMNS} FROM sources WHERE id = ?`, [id])[0] ?? null);
+    }
+    getSourceByRelativePath(relativePath) {
+        return (allRows(this.db, `SELECT ${SOURCE_COLUMNS}
+         FROM sources
+         WHERE lower(replace(relativePath, char(92), '/')) = ?
+         ORDER BY updatedAt DESC
+         LIMIT 1`, [normalizeRelativePathForLookup(relativePath)])[0] ?? null);
     }
     listSources() {
-        return allRows(this.db, "SELECT id, path, relativePath, type, size, mtimeMs, hash, parseStatus, errorMessage, title FROM sources ORDER BY relativePath ASC");
+        return allRows(this.db, `SELECT ${SOURCE_COLUMNS} FROM sources ORDER BY relativePath ASC`);
     }
     upsertSource(source) {
         const statement = this.db.prepare(`
       INSERT INTO sources (id, path, relativePath, type, size, mtimeMs, hash, parseStatus, errorMessage, title, updatedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(path) DO UPDATE SET
+      ON CONFLICT(id) DO UPDATE SET
+        path = excluded.path,
         relativePath = excluded.relativePath,
         type = excluded.type,
         size = excluded.size,
@@ -227,6 +239,9 @@ class StudyDatabase {
     }
 }
 exports.StudyDatabase = StudyDatabase;
+function normalizeRelativePathForLookup(relativePath) {
+    return relativePath.replace(/\\/g, "/").toLowerCase();
+}
 function cryptoRandomId() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
