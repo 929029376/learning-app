@@ -19,7 +19,9 @@ import type { Extension, Text } from "@codemirror/state";
 import { Decoration, EditorView, keymap } from "@codemirror/view";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
+import bashSyntax from "react-syntax-highlighter/dist/esm/languages/prism/bash";
+import cppSyntax from "react-syntax-highlighter/dist/esm/languages/prism/cpp";
 import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import type {
@@ -52,6 +54,11 @@ const minimumFileTreeWidth = 120;
 const maximumFileTreeWidth = 520;
 const maximumProgramInputLength = 12000;
 const workspacePanels: WorkspacePanel[] = ["progress", "lesson", "studio"];
+
+SyntaxHighlighter.registerLanguage("cpp", cppSyntax);
+SyntaxHighlighter.registerLanguage("c++", cppSyntax);
+SyntaxHighlighter.registerLanguage("bash", bashSyntax);
+SyntaxHighlighter.registerLanguage("shell", bashSyntax);
 
 const editorFontOptions = [
   { id: "consolas", label: "Consolas", family: '"Consolas", "Microsoft YaHei UI", monospace' },
@@ -1327,26 +1334,32 @@ export function App() {
                     return (
                       <div className="example-card">
                         <div className="example-card-header">
-                          <strong>{codeBlock.languageLabel} 示例代码</strong>
+                          <strong>{getCodeBlockTitle(codeBlock.language)}</strong>
                         </div>
-                        <SyntaxHighlighter
-                          language={codeBlock.language}
-                          style={oneLight}
-                          customStyle={{
-                            margin: 0,
-                            padding: "16px 18px",
-                            background: "rgba(255, 255, 255, 0.88)",
-                            fontSize: "14px",
-                            lineHeight: 1.72
-                          }}
-                          codeTagProps={{
-                            style: {
-                              fontFamily: editorFontFamily
-                            }
-                          }}
-                        >
-                          {codeBlock.code}
-                        </SyntaxHighlighter>
+                        {codeBlock.language === "cpp" ? (
+                          <pre className="course-code-block language-cpp" style={{ fontFamily: editorFontFamily }}>
+                            <code>{highlightCppCode(codeBlock.code)}</code>
+                          </pre>
+                        ) : (
+                          <SyntaxHighlighter
+                            language={codeBlock.language}
+                            style={oneLight}
+                            customStyle={{
+                              margin: 0,
+                              padding: "16px 18px",
+                              background: "rgba(255, 255, 255, 0.88)",
+                              fontSize: "14px",
+                              lineHeight: 1.72
+                            }}
+                            codeTagProps={{
+                              style: {
+                                fontFamily: editorFontFamily
+                              }
+                            }}
+                          >
+                            {codeBlock.code}
+                          </SyntaxHighlighter>
+                        )}
                       </div>
                     );
                   }
@@ -1946,8 +1959,105 @@ function normalizeCodeLanguage(language: string): string {
 function getLanguageLabel(language: string): string {
   if (language === "cpp") return "C++";
   if (language === "bash") return "Shell";
-  if (language === "text") return "Text";
+  if (language === "text") return "文本";
   return language.toUpperCase();
+}
+
+function getCodeBlockTitle(language: string): string {
+  if (language === "cpp") return "C++ 示例代码";
+  if (language === "bash") return "Shell 命令";
+  if (language === "text") return "文本示例";
+  return `${getLanguageLabel(language)} 示例`;
+}
+
+const cppKeywords = new Set([
+  "alignas",
+  "alignof",
+  "auto",
+  "bool",
+  "break",
+  "case",
+  "catch",
+  "char",
+  "class",
+  "const",
+  "constexpr",
+  "continue",
+  "default",
+  "delete",
+  "do",
+  "double",
+  "else",
+  "enum",
+  "false",
+  "float",
+  "for",
+  "if",
+  "include",
+  "inline",
+  "int",
+  "long",
+  "namespace",
+  "new",
+  "nullptr",
+  "private",
+  "protected",
+  "public",
+  "return",
+  "short",
+  "sizeof",
+  "static",
+  "struct",
+  "switch",
+  "template",
+  "this",
+  "true",
+  "try",
+  "typedef",
+  "typename",
+  "using",
+  "void",
+  "while"
+]);
+
+const cppStdNames = new Set([
+  "array",
+  "cin",
+  "cout",
+  "endl",
+  "getline",
+  "map",
+  "pair",
+  "size_t",
+  "string",
+  "unordered_map",
+  "vector"
+]);
+
+const cppTokenPattern =
+  /\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#\s*[A-Za-z_][A-Za-z0-9_]*|::|->|[{}()[\].,;:+\-*/%<>=!&|]+|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b|\s+|./g;
+
+function highlightCppCode(code: string): ReactNode[] {
+  return [...code.matchAll(cppTokenPattern)].map((match, index) => {
+    const token = match[0];
+    const tokenClass = getCppTokenClass(token);
+    if (!tokenClass) return token;
+    return <span key={`${index}-${token}`} className={`cpp-token ${tokenClass}`}>{token}</span>;
+  });
+}
+
+function getCppTokenClass(token: string): string {
+  if (/^\s+$/.test(token)) return "";
+  if (/^\/\//.test(token) || /^\/\*/.test(token)) return "cpp-comment";
+  if (/^["']/.test(token)) return "cpp-string";
+  if (/^#/.test(token)) return "cpp-preprocessor";
+  if (/^\d/.test(token)) return "cpp-number";
+  if (cppKeywords.has(token)) return "cpp-keyword";
+  if (token === "std") return "cpp-namespace";
+  if (cppStdNames.has(token)) return "cpp-std-name";
+  if (/^[A-Z][A-Za-z0-9_]*$/.test(token)) return "cpp-type";
+  if (/^(::|->|[{}()[\].,;:+\-*/%<>=!&|]+)$/.test(token)) return "cpp-operator";
+  return "";
 }
 
 function getNextStageId(overview: CourseOverview | null, currentStageId: string | undefined): string | null {

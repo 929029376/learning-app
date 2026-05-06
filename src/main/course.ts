@@ -38,6 +38,90 @@ const KNOWN_GRADES = new Map<string, string>([
   ["stage-2-12", "A-"]
 ]);
 
+const STAGE_TITLES = new Map<string, string>([
+  ["makefile-lab-01", "1.1 Makefile 入门练习"],
+  ["makefile-lab-02-auto-sources", "1.2 Makefile 自动收集源文件"],
+  ["makefile-lab-03-vpath", "1.3 Makefile vpath 练习"],
+  ["stage-2-1-io-vars", "2.1 输入输出、变量与类型"],
+  ["stage-2-2-operators-if", "2.2 运算、比较与简单分支"],
+  ["stage-2-3-functions", "2.3 函数基础"],
+  ["stage-2-4-function-declaration", "2.4 函数声明、定义与调用顺序"],
+  ["stage-2-5-scope-local-vars", "2.5 作用域与局部变量"],
+  ["stage-2-6-references", "2.6 引用基础"],
+  ["stage-2-7-const-basics", "2.7 const 基础"],
+  ["stage-2-8-string-basics", "2.8 std::string 基础"],
+  ["stage-2-9-getline-basics", "2.9 std::getline 基础"],
+  ["stage-2-10-string-review", "2.10 string 小结与强化"],
+  ["stage-2-11-struct-basics", "2.11 struct 基础"],
+  ["stage-2-12-pointer-basics", "2.12 指针基础"],
+  ["stage-2-13-vector-basics", "2.13 vector 基础"],
+  ["stage-2-14-vector-review-mini-project", "2.14 vector 综合小项目"],
+  ["stage-2-15-cpp-foundation-review", "2.15 C++ 基础阶段总复盘"],
+  ["stage-3-1-class-basics", "3.1 class 基础"],
+  ["stage-3-2-constructors", "3.2 构造函数"],
+  ["stage-3-3-member-functions", "3.3 成员函数"],
+  ["stage-3-4-const-member-functions", "3.4 const 成员函数"],
+  ["stage-3-5-class-header-source", "3.5 类的头文件与源文件拆分"],
+  ["stage-3-6-encapsulation", "3.6 封装"],
+  ["stage-3-7-composition", "3.7 组合"],
+  ["stage-3-8-oop-mini-project", "3.8 面向对象小项目"],
+  ["stage-4-1-vector-review", "4.1 vector 复习"],
+  ["stage-4-2-map-basics", "4.2 map 基础"],
+  ["stage-4-3-unordered-map-basics", "4.3 unordered_map 基础"],
+  ["stage-4-4-set-basics", "4.4 set 基础"],
+  ["stage-4-5-ifstream-basics", "4.5 ifstream 文件读取"],
+  ["stage-4-6-ofstream-basics", "4.6 ofstream 文件写入"],
+  ["stage-4-7-stringstream-parsing", "4.7 stringstream 解析"],
+  ["stage-4-8-container-io-mini-project", "4.8 容器与文件 IO 小项目"],
+  ["stage-5-1-object-lifetime", "5.1 对象生命周期"],
+  ["stage-5-2-new-delete-basics", "5.2 new/delete 基础"],
+  ["stage-5-3-raii-basics", "5.3 RAII 基础"],
+  ["stage-5-4-unique-ptr-basics", "5.4 unique_ptr 基础"],
+  ["stage-5-5-shared-ptr-basics", "5.5 shared_ptr 基础"],
+  ["stage-5-6-inheritance-basics", "5.6 继承基础"],
+  ["stage-5-7-virtual-functions", "5.7 虚函数"],
+  ["stage-5-8-polymorphism-mini-project", "5.8 多态小项目"],
+  ["stage-6-1-iterator-basics", "6.1 迭代器基础"],
+  ["stage-6-2-range-for", "6.2 range-for"],
+  ["stage-6-3-algorithm-basics", "6.3 标准算法基础"],
+  ["stage-6-4-lambda-basics", "6.4 lambda 基础"],
+  ["stage-6-5-function-callback", "6.5 function 回调"],
+  ["stage-6-6-custom-sort", "6.6 自定义排序"],
+  ["stage-6-7-status-error-handling", "6.7 状态与错误处理"],
+  ["stage-6-8-callback-mini-project", "6.8 回调小项目"],
+  ["stage-7-1-thread-concept", "7.1 线程概念"],
+  ["stage-7-2-std-thread", "7.2 std::thread"],
+  ["stage-7-3-mutex-basics", "7.3 mutex 基础"],
+  ["stage-7-4-lock-guard", "7.4 lock_guard"],
+  ["stage-7-5-condition-variable", "7.5 condition_variable"],
+  ["stage-7-6-producer-consumer", "7.6 生产者消费者"],
+  ["stage-7-7-thread-pool-design", "7.7 线程池设计"],
+  ["stage-7-8-thread-pool-implementation", "7.8 线程池实现"],
+  ["stage-8-1-socket-concept", "8.1 socket 概念"],
+  ["stage-8-2-tcp-server-minimal", "8.2 最小 TCP 服务器"],
+  ["stage-8-3-accept-read-write", "8.3 accept/read/write"],
+  ["stage-8-4-nonblocking-io", "8.4 非阻塞 IO"],
+  ["stage-8-5-epoll-concept", "8.5 epoll 概念"],
+  ["stage-8-6-event-loop", "8.6 事件循环"],
+  ["stage-8-7-reactor-components", "8.7 Reactor 组件"],
+  ["stage-8-8-reactor-mini-project", "8.8 Reactor 小项目"],
+  ["stage-9-1-project-architecture", "9.1 项目架构"],
+  ["stage-9-2-webpage-model", "9.2 WebPage 模型"],
+  ["stage-9-3-file-reader", "9.3 文件读取器"],
+  ["stage-9-4-page-parser", "9.4 页面解析器"],
+  ["stage-9-5-page-library", "9.5 页面库"],
+  ["stage-9-6-word-segmenter-mock", "9.6 模拟分词器"],
+  ["stage-9-7-inverted-index", "9.7 倒排索引"],
+  ["stage-9-8-query-parser", "9.8 查询解析器"],
+  ["stage-9-9-searcher", "9.9 搜索器"],
+  ["stage-9-10-cache", "9.10 缓存"],
+  ["stage-9-11-thread-pool-integration", "9.11 线程池整合"],
+  ["stage-9-12-tcp-server-integration", "9.12 TCP 服务器整合"],
+  ["stage-9-13-online-server", "9.13 在线服务"],
+  ["stage-9-14-tests-debugging", "9.14 测试与调试"],
+  ["stage-9-15-final-review-refactor", "9.15 最终复盘与重构"]
+]);
+
 interface CourseState {
   currentStageId?: string;
   completedStageIds: string[];
@@ -192,6 +276,9 @@ function parseStageNumber(stageId: string): { phase: number; stage: number } | n
 }
 
 function formatStageTitle(stageId: string, stageNumber = parseStageNumber(stageId)): string {
+  const knownTitle = STAGE_TITLES.get(stageId);
+  if (knownTitle) return knownTitle;
+
   const words = stageId
     .replace(/^stage-\d+-\d+-?/, "")
     .replace(/^makefile-lab-\d+-?/, "makefile lab ")

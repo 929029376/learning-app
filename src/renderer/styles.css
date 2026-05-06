@@ -705,9 +705,22 @@ small {
 .example-card-header {
   display: flex;
   align-items: center;
-  padding: 12px 14px;
-  color: #4d7f18;
+  min-height: 42px;
+  padding: 9px 14px;
+  color: #3f6d32;
+  background: linear-gradient(180deg, rgba(236, 244, 224, 0.72), rgba(220, 233, 207, 0.42));
   font-weight: 900;
+}
+
+.example-card-header strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.48);
+  font-size: 14px;
+  line-height: 1.25;
 }
 
 .example-card pre {
@@ -725,6 +738,55 @@ small {
   background: transparent;
   font-size: 14px;
   line-height: 1.75;
+}
+
+.course-code-block {
+  padding: 16px 18px;
+  font-size: 14px;
+  line-height: 1.72;
+  white-space: pre;
+}
+
+.course-code-block code {
+  font-family: inherit;
+}
+
+.cpp-token.cpp-keyword {
+  color: #8b2bb0;
+  font-weight: 800;
+}
+
+.cpp-token.cpp-type {
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.cpp-token.cpp-namespace,
+.cpp-token.cpp-std-name {
+  color: #1f63b5;
+  font-weight: 760;
+}
+
+.cpp-token.cpp-string {
+  color: #a15c00;
+}
+
+.cpp-token.cpp-number {
+  color: #b85024;
+}
+
+.cpp-token.cpp-comment {
+  color: #78836f;
+  font-style: italic;
+}
+
+.cpp-token.cpp-preprocessor {
+  color: #7a4fba;
+  font-weight: 800;
+}
+
+.cpp-token.cpp-operator {
+  color: #53606f;
 }
 
 .markdown-body table {
