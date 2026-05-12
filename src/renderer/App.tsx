@@ -1062,11 +1062,8 @@ export function App() {
 
   async function completeCurrentStage() {
     if (!studyRoot || !stageContent) return;
-    if (!canCompleteCurrentStage) {
-      setStatus("还没有检测到本节练习成绩，不能标记完成。请先完成练习并回到对话里让我检查评分。");
-      return;
-    }
 
+    setStatus("正在检查本节练习评分...");
     try {
       const nextOverview = await window.learningApi.completeStage({
         studyRoot,
@@ -1079,7 +1076,10 @@ export function App() {
         await loadStage(studyRoot, nextStageId);
       }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(message.includes("练习成绩") || message.includes("评分")
+        ? "还没有查阅到本节练习评分，请先完成练习并让老师检查评分后再点击本节完成。"
+        : message);
     }
   }
 
@@ -1558,8 +1558,8 @@ export function App() {
               <button
                 className="ghost-button"
                 onClick={completeCurrentStage}
-                disabled={!stageContent || !canCompleteCurrentStage}
-                title={canCompleteCurrentStage ? "已有本节评分，可以标记完成" : "需要老师检查并写入本节评分后才能完成"}
+                disabled={!stageContent}
+                title={canCompleteCurrentStage ? "已有本节评分，可以标记完成" : "点击后会检查是否已有本节评分"}
               >
                 本节完成
               </button>
